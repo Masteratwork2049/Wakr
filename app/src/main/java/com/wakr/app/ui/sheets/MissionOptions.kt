@@ -7,11 +7,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -20,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wakr.app.core.*
@@ -28,7 +24,6 @@ import com.wakr.app.data.jsonArray
 import com.wakr.app.data.records
 import com.wakr.app.data.toJson
 import com.wakr.app.data.toMission
-import com.wakr.app.ui.elasticClickable
 import com.wakr.app.ui.missions.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,66 +45,73 @@ internal val AlarmDifficulty.label get() = when (this) {
 internal fun MissionOptions(
     wake: WakeOptions, missions: List<AlarmMission>,
     onWake: (WakeOptions) -> Unit, onMissions: (List<AlarmMission>) -> Unit,
+    separateDifficulty: Boolean = false,
+    soundRows: (@Composable () -> Unit)? = null,
+    scheduleRows: (@Composable () -> Unit)? = null,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     var edit by remember { mutableStateOf<AlarmMission?>(null) }
     var preview by remember { mutableStateOf<AlarmMission?>(null) }
     var removed by remember { mutableStateOf<Pair<Int, AlarmMission>?>(null) }
-    Row(Modifier.fillMaxWidth().padding(8.dp).clip(CircleShape)
-        .background(MaterialTheme.colorScheme.primaryContainer)) {
-        AlarmOptionRow("Wake-up missions", Icons.Outlined.Psychology,
-            if (missions.isEmpty()) "None" else missions.size.toString(),
-            expanded = expanded, onClick = { expanded = !expanded })
-    }
-    AnimatedVisibility(expanded) {
-        Column {
+    if (separateDifficulty) {
+        Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             ChoiceRow("Difficulty", wake.difficulty, AlarmDifficulty.entries, { it.label }) { onWake(wake.withDifficulty(it)) }
-            if (wake.difficulty == AlarmDifficulty.EASY && missions.isNotEmpty()) {
-                Text("Choose Normal, Hard, No Mercy, or Custom to run these missions.",
-                    Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
-            }
-            missions.forEachIndexed { index, mission ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ) {
-                    Column(Modifier.padding(8.dp)) {
-                        AlarmOptionRow(mission.type.title, Icons.Outlined.Edit, mission.target?.label ?: when (mission.type) {
-                            MissionType.PUZZLE -> mission.puzzleMode
-                            MissionType.MATH, MissionType.MEMORY -> "${mission.roundsOrCount} · ${mission.difficulty.name.lowercase().replaceFirstChar(Char::uppercase)}"
-                            else -> null
-                        }) { edit = mission }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            TextButton(onClick = { preview = mission }) { Text("Try it") }
-                            Row {
-                                IconButton(enabled = index > 0, onClick = {
-                                    onMissions(missions.toMutableList().apply { add(index - 1, removeAt(index)) })
-                                }) { Icon(Icons.Outlined.ArrowUpward, "Move up") }
-                                IconButton(enabled = index < missions.lastIndex, onClick = {
-                                    onMissions(missions.toMutableList().apply { add(index + 1, removeAt(index)) })
-                                }) { Icon(Icons.Outlined.ArrowDownward, "Move down") }
-                                IconButton(onClick = {
-                                    removed = index to mission
-                                    onMissions(missions.filter { it.id != mission.id })
-                                }) { Icon(Icons.Outlined.Delete, "Remove mission") }
-                            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+    val summary = when (missions.size) {
+        0 -> "No missions"
+        1 -> missions.single().type.title
+        else -> "${missions.size} missions"
+    }
+    AlarmEditorSection("Wake-up missions", summary, Icons.Outlined.Psychology) {
+        if (!separateDifficulty) ChoiceRow("Difficulty", wake.difficulty, AlarmDifficulty.entries, { it.label }) { onWake(wake.withDifficulty(it)) }
+        if (wake.difficulty == AlarmDifficulty.EASY && missions.isNotEmpty()) {
+            Text("Choose Normal, Hard, No Mercy, or Custom to run these missions.",
+                Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
+        }
+        missions.forEachIndexed { index, mission ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            ) {
+                Column(Modifier.padding(8.dp)) {
+                    AlarmOptionRow(mission.type.title, Icons.Outlined.Edit, mission.target?.label ?: when (mission.type) {
+                        MissionType.PUZZLE -> mission.puzzleMode
+                        MissionType.MATH, MissionType.MEMORY -> "${mission.roundsOrCount} · ${mission.difficulty.name.lowercase().replaceFirstChar(Char::uppercase)}"
+                        else -> null
+                    }) { edit = mission }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TextButton(onClick = { preview = mission }) { Text("Try it") }
+                        Row {
+                            IconButton(enabled = index > 0, onClick = {
+                                onMissions(missions.toMutableList().apply { add(index - 1, removeAt(index)) })
+                            }) { Icon(Icons.Outlined.ArrowUpward, "Move up") }
+                            IconButton(enabled = index < missions.lastIndex, onClick = {
+                                onMissions(missions.toMutableList().apply { add(index + 1, removeAt(index)) })
+                            }) { Icon(Icons.Outlined.ArrowDownward, "Move down") }
+                            IconButton(onClick = {
+                                removed = index to mission
+                                onMissions(missions.filter { it.id != mission.id })
+                            }) { Icon(Icons.Outlined.Delete, "Remove mission") }
                         }
                     }
                 }
             }
-            removed?.let { (index, mission) ->
-                Snackbar(modifier = Modifier.padding(8.dp), action = {
-                    TextButton(onClick = {
-                        onMissions(missions.toMutableList().apply { add(index.coerceAtMost(size), mission) })
-                        removed = null
-                    }) { Text("Undo") }
-                }) { Text("Mission removed") }
-            }
-            TextButton(onClick = { adding = true }) { Text("+ Add mission") }
         }
+        removed?.let { (index, mission) ->
+            Snackbar(modifier = Modifier.padding(8.dp), action = {
+                TextButton(onClick = {
+                    onMissions(missions.toMutableList().apply { add(index.coerceAtMost(size), mission) })
+                    removed = null
+                }) { Text("Undo") }
+            }) { Text("Mission removed") }
+        }
+        FilledTonalButton(onClick = { adding = true }, modifier = Modifier.padding(12.dp)) { Text("Add mission") }
     }
-    WakeBehaviorOptions(wake, onWake)
+    Spacer(Modifier.height(12.dp))
+    WakeBehaviorOptions(wake, onWake, soundRows, scheduleRows)
     if (adding) AlertDialog(onDismissRequest = { adding = false }, title = { Text("Add mission") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -132,13 +134,14 @@ internal fun MissionOptions(
     preview?.let { mission ->
         val seed = remember(mission.id) { System.nanoTime() }
         var passed by remember(mission.id) { mutableStateOf(false) }
-        AlertDialog(onDismissRequest = { preview = null }, title = { Text(mission.type.title) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (passed) Text("Mission complete", style = MaterialTheme.typography.titleLarge)
-                    else MissionChallenge(mission, seed) { passed = true }
-                }
-            }, confirmButton = { TextButton(onClick = { preview = null }) { Text("Close") } })
+        AlarmFullscreenDialog(onClose = { preview = null }) {
+            MissionScreen("Practice", mission.type.title, progress = null, onBack = { preview = null }) {
+                if (passed) {
+                    Text("Mission complete", style = MaterialTheme.typography.titleLarge)
+                    FilledTonalButton(onClick = { preview = null }) { Text("Done") }
+                } else MissionChallenge(mission, seed) { passed = true }
+            }
+        }
     }
 }
 
@@ -184,8 +187,12 @@ private fun MissionEditor(initial: AlarmMission, onClose: () -> Unit, save: (Ala
 }
 
 @Composable
-private fun WakeBehaviorOptions(wake: WakeOptions, save: (WakeOptions) -> Unit) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+private fun WakeBehaviorOptions(
+    wake: WakeOptions,
+    save: (WakeOptions) -> Unit,
+    soundRows: (@Composable () -> Unit)?,
+    scheduleRows: (@Composable () -> Unit)?,
+) {
     fun custom(options: WakeOptions) = save(options.copy(difficulty = AlarmDifficulty.CUSTOM))
     val context = LocalContext.current
     val audio = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -206,44 +213,59 @@ private fun WakeBehaviorOptions(wake: WakeOptions, save: (WakeOptions) -> Unit) 
             if (tracks.isNotEmpty()) save(latestWake.copy(soundMode = AlarmSoundMode.LOCAL_MUSIC, musicUris = tracks))
         }
     }
-    AlarmOptionRow("Wake-up options", Icons.Outlined.Tune, expanded = expanded, onClick = { expanded = !expanded })
-    AnimatedVisibility(expanded) {
-        Column {
-            ChoiceRow("Sound mode", wake.soundMode, AlarmSoundMode.entries, {
-                when (it) {
-                    AlarmSoundMode.ONE -> "One sound"
-                    AlarmSoundMode.SURPRISE -> "Surprise me"
-                    AlarmSoundMode.LOCAL_MUSIC -> "Random from my music"
-                }
-            }) {
-                save(wake.copy(soundMode = it))
+    val soundSummary = when (wake.soundMode) {
+        AlarmSoundMode.ONE -> "One sound"
+        AlarmSoundMode.SURPRISE -> "Surprise me"
+        AlarmSoundMode.LOCAL_MUSIC -> "Random from my music"
+    }
+    AlarmEditorSection("Sound and vibration", "$soundSummary · ${wake.volumePercent}%", Icons.Outlined.VolumeUp) {
+        soundRows?.invoke()
+        ChoiceRow("Sound mode", wake.soundMode, AlarmSoundMode.entries, {
+            when (it) {
+                AlarmSoundMode.ONE -> "One sound"
+                AlarmSoundMode.SURPRISE -> "Surprise me"
+                AlarmSoundMode.LOCAL_MUSIC -> "Random from my music"
             }
-            if (wake.soundMode == AlarmSoundMode.LOCAL_MUSIC) {
-                NavigateRow("Choose local tracks", "${wake.musicUris.size} selected") { audio.launch(arrayOf("audio/*")) }
-                NavigateRow("Choose local folder", null) { folder.launch(null) }
-            }
-            folderMessage?.let { Text(it, Modifier.padding(horizontal = 16.dp)) }
-            NumberChoice("Alarm volume", wake.volumePercent, (10..100 step 5).toList(), { "$it%" }) { save(wake.copy(volumePercent = it)) }
-            NumberChoice("Volume fade-in", wake.fadeInSeconds, listOf(0, 5, 10, 15, 30, 45, 60, 90, 120), { if (it == 0) "Off" else "$it sec" }) { save(wake.copy(fadeInSeconds = it)) }
-            ChoiceRow("Vibration pattern", wake.vibrationPattern, VibrationPattern.entries, { it.name.lowercase().replaceFirstChar(Char::uppercase) }) {
-                save(wake.copy(vibrationPattern = it))
-            }
-            if (context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)) {
-                AlarmOptionSwitchRow("Flashlight strobe", Icons.Outlined.FlashlightOn, wake.flashStrobeEnabled) { save(wake.copy(flashStrobeEnabled = it)) }
-            }
-            AlarmOptionSwitchRow("Voice and screen light", Icons.Outlined.RecordVoiceOver, wake.voiceAnnounceEnabled) { save(wake.copy(voiceAnnounceEnabled = it)) }
-            AlarmOptionSwitchRow("Snooze", Icons.Outlined.Snooze, wake.snoozeEnabled) { custom(wake.copy(snoozeEnabled = it)) }
-            if (wake.snoozeEnabled) {
-                NumberChoice("Snooze duration", wake.snoozeDurationMin ?: 0, (0..30).toList(), { if (it == 0) "App default" else "$it min" }) { custom(wake.copy(snoozeDurationMin = it.takeIf { n -> n > 0 })) }
-                NumberChoice("Snooze limit", wake.maxSnoozes ?: 0, (0..10).toList(), { if (it == 0) "Unlimited" else it.toString() }) { custom(wake.copy(maxSnoozes = it.takeIf { n -> n > 0 })) }
-                AlarmOptionSwitchRow("Shake to snooze", Icons.Outlined.Vibration, wake.shakeToSnooze) { custom(wake.copy(shakeToSnooze = it)) }
-            }
-            NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), { if (it == 0) "Off" else "$it min" }) { custom(wake.copy(lockBeforeRingMin = it)) }
-            AlarmOptionSwitchRow("Re-launch if left", Icons.Outlined.NotificationsActive, wake.relaunchOnLeave) { custom(wake.copy(relaunchOnLeave = it)) }
-            NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) { custom(wake.copy(rebootSurvivalMax = it)) }
-            NumberChoice("Still-awake checks", wake.stillAwakeChecksCount, (0..2).toList(), { if (it == 0) "Off" else it.toString() }) { custom(wake.copy(stillAwakeChecksCount = it)) }
-            if (wake.stillAwakeChecksCount > 0) NumberChoice("Still-awake delay", wake.stillAwakeDelayMin, (3..15).toList(), { "$it min" }) { custom(wake.copy(stillAwakeDelayMin = it)) }
+        }) {
+            save(wake.copy(soundMode = it))
         }
+        if (wake.soundMode == AlarmSoundMode.LOCAL_MUSIC) {
+            NavigateRow("Choose local tracks", "${wake.musicUris.size} selected") { audio.launch(arrayOf("audio/*")) }
+            NavigateRow("Choose local folder", null) { folder.launch(null) }
+        }
+        folderMessage?.let { Text(it, Modifier.padding(horizontal = 16.dp)) }
+        NumberChoice("Alarm volume", wake.volumePercent, (10..100 step 5).toList(), { "$it%" }) { save(wake.copy(volumePercent = it)) }
+        NumberChoice("Volume fade-in", wake.fadeInSeconds, listOf(0, 5, 10, 15, 30, 45, 60, 90, 120), { if (it == 0) "Off" else "$it sec" }) { save(wake.copy(fadeInSeconds = it)) }
+        ChoiceRow("Vibration pattern", wake.vibrationPattern, VibrationPattern.entries, { it.name.lowercase().replaceFirstChar(Char::uppercase) }) {
+            save(wake.copy(vibrationPattern = it))
+        }
+        if (context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)) {
+            AlarmOptionSwitchRow("Flashlight strobe", Icons.Outlined.FlashlightOn, wake.flashStrobeEnabled) { save(wake.copy(flashStrobeEnabled = it)) }
+        }
+        AlarmOptionSwitchRow("Voice and screen light", Icons.Outlined.RecordVoiceOver, wake.voiceAnnounceEnabled) { save(wake.copy(voiceAnnounceEnabled = it)) }
+    }
+    Spacer(Modifier.height(12.dp))
+    val snoozeSummary = if (!wake.snoozeEnabled) "Off" else
+        (wake.snoozeDurationMin?.let { "$it min" } ?: "App duration") + " · " +
+            (wake.maxSnoozes?.let { "up to $it times" } ?: "unlimited")
+    AlarmEditorSection("Snooze", snoozeSummary, Icons.Outlined.Snooze) {
+        AlarmOptionSwitchRow("Snooze", Icons.Outlined.Snooze, wake.snoozeEnabled) { custom(wake.copy(snoozeEnabled = it)) }
+        if (wake.snoozeEnabled) {
+            NumberChoice("Snooze duration", wake.snoozeDurationMin ?: 0, (0..30).toList(), { if (it == 0) "App default" else "$it min" }) { custom(wake.copy(snoozeDurationMin = it.takeIf { n -> n > 0 })) }
+            NumberChoice("Snooze limit", wake.maxSnoozes ?: 0, (0..10).toList(), { if (it == 0) "Unlimited" else it.toString() }) { custom(wake.copy(maxSnoozes = it.takeIf { n -> n > 0 })) }
+            AlarmOptionSwitchRow("Shake to snooze", Icons.Outlined.Vibration, wake.shakeToSnooze) { custom(wake.copy(shakeToSnooze = it)) }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    val scheduleSummary = listOfNotNull(wake.timeZoneId ?: "Device time zone",
+        wake.lockBeforeRingMin.takeIf { it > 0 }?.let { "$it min pre-ring lock" }).joinToString(" · ")
+    AlarmEditorSection("Scheduling and protection", scheduleSummary, Icons.Outlined.Tune) {
+        scheduleRows?.invoke()
+        NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), { if (it == 0) "Off" else "$it min" }) { custom(wake.copy(lockBeforeRingMin = it)) }
+        AlarmOptionSwitchRow("Re-launch if left", Icons.Outlined.NotificationsActive, wake.relaunchOnLeave) { custom(wake.copy(relaunchOnLeave = it)) }
+        NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) { custom(wake.copy(rebootSurvivalMax = it)) }
+        NumberChoice("Still-awake checks", wake.stillAwakeChecksCount, (0..2).toList(), { if (it == 0) "Off" else it.toString() }) { custom(wake.copy(stillAwakeChecksCount = it)) }
+        if (wake.stillAwakeChecksCount > 0) NumberChoice("Still-awake delay", wake.stillAwakeDelayMin, (3..15).toList(), { "$it min" }) { custom(wake.copy(stillAwakeDelayMin = it)) }
     }
 }
 

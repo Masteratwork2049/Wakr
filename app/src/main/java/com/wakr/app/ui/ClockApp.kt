@@ -98,7 +98,7 @@ import com.wakr.app.ui.screens.OnboardingScreen
 import com.wakr.app.ui.screens.StopwatchScreen
 import com.wakr.app.ui.screens.SettingsScreen
 import com.wakr.app.ui.screens.TimersScreen
-import com.wakr.app.ui.sheets.AlarmEditSheet
+import com.wakr.app.ui.sheets.AlarmEditPage
 import com.wakr.app.ui.sheets.NewAlarmPickerSheet
 import com.wakr.app.ui.sheets.AddCitySheet
 import com.wakr.app.ui.theme.ClockTheme
@@ -480,17 +480,6 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                 onSelectCity = { selectedWorldCityZoneId = it.zone.id },
                                 onShowLocalTime = { selectedWorldCityZoneId = null },
                                 alarmContent = { alarmCards(it, true, PaddingValues(vertical = 8.dp)) },
-                                showAlarmEditor = editing != null,
-                                alarmEditor = {
-                                    com.wakr.app.ui.screens.InlineAlarmEditorPanel(
-                                        editingAlarm = editing,
-                                        weekStart = settings.alarms.weekStart,
-                                        order = settings.alarms.weekStart.order(com.wakr.app.ui.sheets.systemFirstDay()),
-                                        onSave = { saveWithConfirmation(it); editing = null; showNewAlarmPicker = false },
-                                        onCancel = { editing = null; showNewAlarmPicker = false },
-                                        onDelete = { id -> guardAlarmChanges(setOf(id)) { vm.deleteAlarm(id) }; editing = null; showNewAlarmPicker = false },
-                                        onSkip = { id -> guardAlarmChanges(setOf(id)) { vm.skipNext(id) }; editing = null })
-                                },
                                 modifier = Modifier.padding(body))
                         } else {
                             val phoneTab = current
@@ -630,17 +619,15 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
     }
 }
 
-        if (!wideClockPages) {
-            editing?.let { draft ->
-                AlarmEditSheet(
-                    initial = draft,
-                    weekStart = settings.alarms.weekStart,
-                    onDismiss = { editing = null },
-                    onSave = { saveWithConfirmation(it); editing = null },
-                    onDelete = if (draft.id == 0L) null else ({ id -> guardAlarmChanges(setOf(id)) { vm.deleteAlarm(id) } }),
-                    onSkip = if (draft.id == 0L) null else ({ id -> guardAlarmChanges(setOf(id)) { vm.skipNext(id) }; editing = null }),
-                )
-            }
+        editing?.let { draft ->
+            AlarmEditPage(
+                initial = draft,
+                weekStart = settings.alarms.weekStart,
+                onDismiss = { editing = null },
+                onSave = { saveWithConfirmation(it); editing = null },
+                onDelete = if (draft.id == 0L) null else ({ id -> guardAlarmChanges(setOf(id)) { vm.deleteAlarm(id) } }),
+                onSkip = if (draft.id == 0L) null else ({ id -> guardAlarmChanges(setOf(id)) { vm.skipNext(id) }; editing = null }),
+            )
         }
 
         if (showNewAlarmPicker) {

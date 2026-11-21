@@ -37,6 +37,17 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.MusicNote
@@ -148,6 +159,7 @@ fun AlarmPickerSheetContent(
     onDelete: () -> Unit,
     modal: Boolean = false,
     initialRelative: Boolean = false,
+    fullscreen: Boolean = false,
     onSkip: (() -> Unit)? = null,
     missions: List<com.wakr.app.core.AlarmMission> = emptyList(),
     onMissions: (List<com.wakr.app.core.AlarmMission>) -> Unit = {},
@@ -165,12 +177,28 @@ fun AlarmPickerSheetContent(
         .coerceAtLeast(96.dp)
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(AlarmSheetShape)
-            .then(if (modal) Modifier.heightIn(max = maxBodyHeight) else Modifier.imePadding().navigationBarsPadding())
-            .padding(horizontal = 22.dp, vertical = 10.dp),
+            .then(if (fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth().clip(AlarmSheetShape))
+            .then(when {
+                fullscreen -> Modifier.padding(horizontal = 16.dp)
+                modal -> Modifier.heightIn(max = maxBodyHeight).padding(horizontal = 22.dp, vertical = 10.dp)
+                else -> Modifier.imePadding().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 10.dp)
+            }),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (fullscreen) {
+            var confirmDelete by rememberSaveable { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+                Text(title, Modifier.weight(1f).padding(end = 6.dp), style = MaterialTheme.typography.titleLargeEmphasized)
+                if (showDelete) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete alarm") }
+                SheetHeaderButton("Save", primary = true, onClick = { onSave(false) }, enabled = canSave, icon = Icons.Rounded.Check)
+            }
+            if (confirmDelete) AlertDialog(
+                onDismissRequest = { confirmDelete = false }, title = { Text("Delete alarm?") },
+                confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Delete") } },
+                dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+            )
+        } else {
         Spacer(Modifier.height(4.dp))
 
         val compactHeader = LocalConfiguration.current.screenWidthDp < 360 || density.fontScale > 1.1f
@@ -208,6 +236,7 @@ fun AlarmPickerSheetContent(
             )
         }
 
+        }
         if (!canSave) Text("Add a wake-up mission to use this difficulty.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         CompositionLocalProvider(LocalBringIntoViewSpec provides AlarmNameBringIntoViewSpec) {
@@ -216,6 +245,20 @@ fun AlarmPickerSheetContent(
             .persistentScrollEdges(bodyScroll),
             horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(8.dp))
+
+        val nameAndDuplicate: @Composable () -> Unit = {
+            AlarmNameCard(label = label, onLabelChange = onLabelChange, clearDefault = title == "New Alarm")
+            if (showDelete) {
+                Spacer(Modifier.height(8.dp))
+                SheetHeaderButton("Duplicate alarm", primary = false, onClick = { onSave(true) },
+                    icon = Icons.Outlined.ContentCopy, modifier = Modifier.fillMaxWidth(),
+                    arrangement = Arrangement.Start, enabled = canSave)
+            }
+        }
+        if (fullscreen) {
+            nameAndDuplicate()
+            Spacer(Modifier.height(16.dp))
+        }
 
         Box(
             modifier = Modifier
@@ -292,30 +335,47 @@ fun AlarmPickerSheetContent(
 
         Spacer(Modifier.height(8.dp))
 
-        AlarmNameCard(label = label, onLabelChange = onLabelChange, clearDefault = title == "New Alarm")
-        if (showDelete) {
-            Spacer(Modifier.height(8.dp))
-            SheetHeaderButton(
-                "Duplicate alarm", primary = false, onClick = { onSave(true) },
-                icon = Icons.Outlined.ContentCopy, modifier = Modifier.fillMaxWidth(),
-                arrangement = Arrangement.Start, enabled = canSave,
+        val effectiveHour = if (is24Hour) hour else hour % 12 + if (pm) 12 else 0
+        val setTime: (java.time.LocalTime) -> Unit = {
+            onHourChange(it.hour)
+            onMinuteChange(it.minute)
+            onPmChange(it.hour >= 12)
+        }
+        if (fullscreen) {
+            Surface(Modifier.fillMaxWidth(), shape = AlarmCardShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column {
+                    AlarmSchedulingOptions(wake, days.isEmpty(), true, effectiveHour, minute, false,
+                        setTime, setWake, setDays, part = AlarmSchedulePart.BASICS)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            MissionOptions(wake, missions, setWake, onMissions, separateDifficulty = true,
+                soundRows = {
+                    AlarmOptionRow("Sound", Icons.Outlined.MusicNote, soundLabel, onClick = onSoundClick)
+                    AlarmOptionSwitchRow("Vibration", Icons.Outlined.Vibration, vibrate, onVibrateChange)
+                    if (days.isEmpty()) AutoDeleteRow(wake, setWake)
+                },
+                scheduleRows = {
+                    AlarmSchedulingOptions(wake, days.isEmpty(), true, effectiveHour, minute, false,
+                        setTime, setWake, setDays, part = AlarmSchedulePart.SCHEDULE)
+                    if (onSkip != null) AlarmOptionRow("Skip next occurrence", Icons.Outlined.SkipNext, onClick = onSkip)
+                },
             )
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        AlarmOptionsCard(soundLabel, vibrate, onSoundClick, onVibrateChange) {
-            AlarmOptionDivider()
-            val effectiveHour = if (is24Hour) hour else hour % 12 + if (pm) 12 else 0
-            AlarmSchedulingOptions(wake, days.isEmpty(), showDelete, effectiveHour, minute, initialRelative,
-                setTime = { onHourChange(it.hour); onMinuteChange(it.minute); onPmChange(it.hour >= 12) },
-                setWake = setWake, setDays = setDays)
-            MissionOptions(wake, missions, setWake, onMissions)
-            if (onSkip != null) AlarmOptionRow("Skip next occurrence", Icons.Outlined.SkipNext, onClick = onSkip)
-        }
-        if (showDelete) {
+            Spacer(Modifier.height(16.dp))
+        } else {
+            nameAndDuplicate()
             Spacer(Modifier.height(8.dp))
-            DeleteAlarmCard(onDelete = onDelete)
+            AlarmOptionsCard(soundLabel, vibrate, onSoundClick, onVibrateChange) {
+                AlarmOptionDivider()
+                AlarmSchedulingOptions(wake, days.isEmpty(), showDelete, effectiveHour, minute, initialRelative,
+                    setTime, setWake, setDays)
+                MissionOptions(wake, missions, setWake, onMissions)
+                if (onSkip != null) AlarmOptionRow("Skip next occurrence", Icons.Outlined.SkipNext, onClick = onSkip)
+            }
+            if (showDelete) {
+                Spacer(Modifier.height(8.dp))
+                DeleteAlarmCard(onDelete = onDelete)
+            }
         }
 
         Spacer(Modifier.height(2.dp))
@@ -761,6 +821,45 @@ private fun AlarmOptionLayout(
         OptionIconBubble(icon)
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         trailing()
+    }
+}
+
+@Composable
+internal fun AlarmEditorSection(
+    title: String,
+    description: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    content: @Composable () -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "sectionChevron")
+    val colors = MaterialTheme.colorScheme
+    LaunchedEffect(expanded) { if (expanded) bringIntoView.bringIntoView() }
+    Surface(Modifier.fillMaxWidth(), shape = AlarmCardShape, color = colors.surfaceContainerHigh,
+        contentColor = colors.onSurface) {
+        Column {
+            Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .elasticClickable { expanded = !expanded }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OptionIconBubble(icon)
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+                    Text(description, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.rotate(rotation), tint = colors.onSurfaceVariant)
+            }
+            AnimatedVisibility(expanded) {
+                Column {
+                    AlarmOptionDivider()
+                    content()
+                }
+            }
+        }
     }
 }
 

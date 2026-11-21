@@ -72,13 +72,31 @@ private fun MathChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
     val count = mission.roundsOrCount.coerceIn(1, 20)
     val problem = remember(solved) { mathProblem(mission.difficulty, Random(seed + solved)) }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Problem ${(solved + 1).coerceAtMost(count)} of $count")
-        Text(problem.expression, style = MaterialTheme.typography.headlineLarge)
-        Text(if (incorrect) "Try again" else digits.ifEmpty { "Enter answer" })
+        val colors = MaterialTheme.colorScheme
+        Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = colors.surfaceContainerHighest) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Problem ${(solved + 1).coerceAtMost(count)} of $count",
+                    style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+                Text(problem.expression, style = MaterialTheme.typography.displaySmall, color = colors.onSurface)
+            }
+        }
+        Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = colors.surface) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (incorrect) "Try again" else "Answer", style = MaterialTheme.typography.labelLarge,
+                    color = if (incorrect) colors.error else colors.onSurfaceVariant)
+                Text(digits.ifEmpty { "—" }, style = MaterialTheme.typography.titleLarge)
+            }
+        }
         listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("Clear", "0", "Check")).forEach { keys ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 keys.forEach { key ->
-                    FilledTonalButton(modifier = Modifier.weight(1f), onClick = {
+                    FilledTonalButton(modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                        enabled = key != "Check" || digits.isNotEmpty(),
+                        colors = if (key == "Check") ButtonDefaults.filledTonalButtonColors(
+                            containerColor = colors.primary, contentColor = colors.onPrimary,
+                        ) else ButtonDefaults.filledTonalButtonColors(),
+                        onClick = {
                         when (key) {
                             "Clear" -> { digits = ""; incorrect = false }
                             "Check" -> {

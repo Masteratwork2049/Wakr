@@ -118,6 +118,7 @@
         -->
         <activity
             android:name=".alarm.AlarmRingActivity" android:directBootAware="true"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"

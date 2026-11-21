@@ -35,6 +35,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -101,6 +103,7 @@ class AlarmService : Service() {
                     return@launch
                 }
                 val settings = RuntimeAlarms.settings(this@AlarmService)
+                mutedOccurrence.value = null
                 occurrence = id to at
                 current = this@AlarmService
                 val resource = listOf(R.raw.alarm_fallback, R.raw.alarm_sunrise, R.raw.alarm_daybreak)
@@ -134,6 +137,7 @@ class AlarmService : Service() {
                     return@launch
                 }
                 val settings = store.settingsNow()
+                mutedOccurrence.value = null
                 occurrence = null
                 stopEffects()
                 ring(timerNotification(this@AlarmService), settings.timers.soundUri,
@@ -225,8 +229,10 @@ class AlarmService : Service() {
                         scope.launch {
                             while (tts === engine && occurrence == (alarm.id to at)) {
                                 val time = android.text.format.DateFormat.getTimeFormat(this@AlarmService).format(java.util.Date())
-                                engine.speak(listOf(time, alarm.label).filter { it.isNotBlank() }.joinToString(". "),
-                                    TextToSpeech.QUEUE_FLUSH, null, "alarm:$at")
+                                if (mutedOccurrence.value != (alarm.id to at)) {
+                                    engine.speak(listOf(time, alarm.label).filter { it.isNotBlank() }.joinToString(". "),
+                                        TextToSpeech.QUEUE_FLUSH, null, "alarm:$at")
+                                }
                                 delay(20_000)
                             }
                         }
@@ -294,7 +300,10 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
-        if (current === this) current = null
+        if (current === this) {
+            current = null
+            mutedOccurrence.value = null
+        }
         stopEffects()
         active = false
         silenceJob?.cancel()
@@ -307,6 +316,22 @@ class AlarmService : Service() {
 
     companion object {
         private var current: AlarmService? = null
+        private val mutedOccurrence = MutableStateFlow<Pair<Long, Long>?>(null)
+        internal val muted = mutedOccurrence.asStateFlow()
+
+        fun toggleMute(id: Long, at: Long) {
+            val token = id to at
+            val service = current?.takeIf { it.occurrence == token && it.active } ?: return
+            if (mutedOccurrence.value == token) {
+                mutedOccurrence.value = null
+                service.sound.resume()
+            } else {
+                mutedOccurrence.value = token
+                service.sound.pause()
+                service.tts?.stop()
+            }
+        }
+
         suspend fun stopOccurrence(id: Long, at: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
             current?.takeIf { it.occurrence == (id to at) }?.stopSelf()
         }

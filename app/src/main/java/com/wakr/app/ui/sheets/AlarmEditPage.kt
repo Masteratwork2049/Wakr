@@ -2,26 +2,20 @@ package com.wakr.app.ui.sheets
 
 import com.wakr.app.core.asDuplicate
 
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.wakr.app.core.Alarm
 import com.wakr.app.data.WeekStart
 import com.wakr.app.data.order
-import kotlinx.coroutines.launch
 import java.time.LocalTime
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlarmEditSheet(
+fun AlarmEditPage(
     initial: Alarm,
     weekStart: WeekStart,
     onDismiss: () -> Unit,
@@ -29,21 +23,6 @@ fun AlarmEditSheet(
     onDelete: ((Long) -> Unit)?,
     onSkip: ((Long) -> Unit)? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    var closing by remember { mutableStateOf(false) }
-    fun closeThen(action: () -> Unit) {
-        if (closing) return
-        closing = true
-        scope.launch {
-            try {
-                sheetState.hide()
-                if (!sheetState.isVisible) action()
-            } finally {
-                closing = false
-            }
-        }
-    }
     val context = LocalContext.current
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
 
@@ -67,17 +46,11 @@ fun AlarmEditSheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        shape = AlarmSheetShape,
-        dragHandle = { AlarmEditorDragHandle() },
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-    ) {
+    AlarmFullscreenDialog(onDismiss) {
         AlarmPickerSheetContent(
             wake = wake, setWake = { wake = it }, setDays = { days = it },
             missions = missions, onMissions = { missions = it },
-            modal = true,
+            fullscreen = true,
             title = "Edit Alarm",
             hour = hour,
             minute = minute,
@@ -98,7 +71,7 @@ fun AlarmEditSheet(
             onToggleDay = { day -> days = if (day in days) days - day else days + day },
             onVibrateChange = { vibrate = it },
             onSoundClick = openSoundSelector,
-            onCancel = { closeThen(onDismiss) },
+            onCancel = onDismiss,
             onSave = { duplicate ->
                 val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
                 val updated = initial.copy(
@@ -110,15 +83,13 @@ fun AlarmEditSheet(
                     vibrate = vibrate,
                     soundUri = soundUri,
                 ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
-                closeThen { onSave(updated) }
+                onSave(updated)
             },
             onSkip = onSkip?.takeIf { initial.nextFire(java.time.ZonedDateTime.now()) != null }
-                ?.let { skip -> { closeThen { skip(initial.id) } } },
+                ?.let { skip -> { skip(initial.id) } },
             onDelete = {
-                closeThen {
-                    onDelete?.invoke(initial.id)
-                    onDismiss()
-                }
+                onDelete?.invoke(initial.id)
+                onDismiss()
             },
         )
     }

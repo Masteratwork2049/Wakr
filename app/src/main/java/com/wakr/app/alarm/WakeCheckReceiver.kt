@@ -15,6 +15,8 @@ import com.wakr.app.core.WakeUpLog
 import com.wakr.app.data.ClockStore
 import com.wakr.app.data.encodeAlarms
 import com.wakr.app.data.parseAlarms
+import com.wakr.app.data.toJson
+import com.wakr.app.data.toWakeUpLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,6 +82,17 @@ internal object WakeChecks {
             alarm.wake.stillAwakeChecksCount.coerceIn(1, 2)))
     }
 
+    suspend fun recordEmergency(c: Context, alarm: Alarm, at: Long, now: Long) = mutex.withLock {
+        val entry = log(alarm, at, now, WakeOutcome.EMERGENCY_STOP)
+        if (RuntimeAlarms.unlocked(c)) {
+            ClockStore(c).putWakeLog(entry)
+        } else {
+            c.createDeviceProtectedStorageContext().getSharedPreferences("emergency_stops", Context.MODE_PRIVATE)
+                .edit().putString(entry.id.toString(), entry.copy(alarmLabel = "").toJson().toString()).commit()
+        }
+        Unit
+    }
+
     private fun save(c: Context, check: Check) {
         preferences(c).edit().putString(id(check).toString(), check.encode()).apply()
         schedule(c, check)
@@ -87,6 +100,13 @@ internal object WakeChecks {
 
     suspend fun restore(c: Context) = mutex.withLock {
         preferences(c).all.values.mapNotNull { (it as? String)?.let(::decode) }.forEach { schedule(c, it) }
+        val emergency = c.createDeviceProtectedStorageContext().getSharedPreferences("emergency_stops", Context.MODE_PRIVATE)
+        val entries = emergency.all
+        val store = ClockStore(c)
+        for ((key, raw) in entries) {
+            runCatching { JSONObject(raw as String).toWakeUpLog() }.getOrNull()?.let { store.putWakeLog(it) }
+            emergency.edit().remove(key).apply()
+        }
     }
 
     suspend fun handle(c: Context, token: Long, action: String): Unit = mutex.withLock {

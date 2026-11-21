@@ -7,6 +7,8 @@ import android.os.SystemClock
 import com.wakr.app.core.withAddedSeconds
 import com.wakr.app.core.ClockTimer
 import com.wakr.app.core.finishUserOccurrence
+import com.wakr.app.core.finishEmergencyOccurrence
+import com.wakr.app.core.WakeOutcome
 import com.wakr.app.core.Alarm
 import com.wakr.app.core.Lap
 import com.wakr.app.core.Stopwatch
@@ -36,7 +38,9 @@ class ClockActionReceiver : BroadcastReceiver() {
             val store by lazy { ClockStore(app) }
             try {
                 when (intent.action) {
-                    ACTION_SNOOZE, ACTION_DISMISS -> finishRing(app, id, intent.getLongExtra(UpcomingAlarm.AT, -1), intent.action == ACTION_SNOOZE)
+                    ACTION_SNOOZE, ACTION_DISMISS, ACTION_EMERGENCY -> finishRing(
+                        app, id, intent.getLongExtra(UpcomingAlarm.AT, -1), intent.action.orEmpty(),
+                    )
                     ACTION_TIMER_TOGGLE -> timerToggle(app, store)
                     ACTION_TIMER_ADD -> timerAdd(app, store)
                     ACTION_TIMER_CANCEL -> {
@@ -57,14 +61,17 @@ class ClockActionReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun finishRing(context: Context, id: Long, at: Long, snooze: Boolean) {
+    private suspend fun finishRing(context: Context, id: Long, at: Long, action: String) {
+        val snooze = action == ACTION_SNOOZE
+        val emergency = action == ACTION_EMERGENCY
         val fallback = RuntimeAlarms.settings(context).alarms.snoozeMinutes
         val now = System.currentTimeMillis()
         var handled: Alarm? = null
         val updated = RuntimeAlarms.update(context) { alarms -> alarms.mapNotNull { alarm ->
             if (alarm.id != id || alarm.ringingAt != at) return@mapNotNull alarm
             val due = now + (alarm.wake.snoozeDurationMin ?: fallback).coerceIn(1, 30) * 60_000L
-            val result = alarm.finishUserOccurrence(id, at, due.takeIf { snooze })
+            val result = if (emergency) alarm.finishEmergencyOccurrence(id, at)
+                else alarm.finishUserOccurrence(id, at, due.takeIf { snooze })
             if (result !== alarm) handled = alarm
             result
         } }
@@ -72,7 +79,9 @@ class ClockActionReceiver : BroadcastReceiver() {
         AlarmService.stopOccurrence(id, at)
         val retained = updated.firstOrNull { it.id == id }
         if (retained == null) AlarmScheduler.cancel(context, id) else AlarmScheduler.schedule(context, retained)
-        if (!snooze) WakeChecks.onDismissed(context, previous, at, now)
+        if (emergency) {
+            WakeChecks.recordEmergency(context, previous, at, now)
+        } else if (!snooze) WakeChecks.onDismissed(context, previous, at, now)
     }
 
     private suspend fun timerToggle(context: Context, store: ClockStore) {
@@ -117,6 +126,7 @@ class ClockActionReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_SNOOZE = "com.wakr.app.SNOOZE"
+        const val ACTION_EMERGENCY = "com.wakr.app.EMERGENCY_STOP"
         const val ACTION_DISMISS = "com.wakr.app.DISMISS"
         const val ACTION_TIMER_TOGGLE = "com.wakr.app.TIMER_TOGGLE"
         const val ACTION_TIMER_ADD = "com.wakr.app.TIMER_ADD"

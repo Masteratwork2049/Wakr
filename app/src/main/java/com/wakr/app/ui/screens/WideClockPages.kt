@@ -42,8 +42,6 @@ internal fun WideClockPages(
     cities: List<WorldCity>, selectedZoneId: String?,
     onSelectCity: (WorldCity) -> Unit, onShowLocalTime: () -> Unit,
     alarmContent: @Composable (Modifier) -> Unit,
-    showAlarmEditor: Boolean,
-    alarmEditor: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
@@ -70,8 +68,6 @@ internal fun WideClockPages(
         val top = ((maxHeight - dial - 124.dp) / 2).coerceAtLeast(8.dp)
         val leftClock = (pane - dial) / 2
         val rightClock = pane + 24.dp + leftClock
-        val editorVisible = showAlarmEditor && !worldSelected
-        val clockAlpha = animateFloatAsState(if (editorVisible) 0f else 1f, tween(200), label = "clockEditorVisibility")
 
         // Pager destinations retain their own two-pane content. Do not leave an invisible
         // outgoing pane over the clock: its touch blocker would swallow page swipes.
@@ -100,14 +96,12 @@ internal fun WideClockPages(
         AnalogueWorldClock(clockCity.zone, now, Modifier.offset {
             IntOffset(with(density) { (rightClock + (leftClock - rightClock) * motion.value).roundToPx() },
                 with(density) { top.roundToPx() })
-        }.size(dial).graphicsLayer { alpha = clockAlpha.value }
-            .then(if (editorVisible) Modifier.clearAndSetSemantics {} else Modifier), active = !editorVisible)
+        }.size(dial), active = true)
 
         Box(Modifier.offset {
             IntOffset(with(density) { ((pane + 24.dp) * (1f - motion.value)).roundToPx() },
                 with(density) { (top + dial + 24.dp).roundToPx() })
-        }.width(pane).graphicsLayer { alpha = clockAlpha.value }
-            .then(if (editorVisible) Modifier.clearAndSetSemantics {} else Modifier)) {
+        }.width(pane)) {
             AnimatedContent(worldSelected, transitionSpec = {
                 (fadeIn(tween(250, delayMillis = 100)) + slideInVertically(tween(250)) { it / 10 }) togetherWith
                     fadeOut(tween(160))
@@ -134,9 +128,7 @@ internal fun WideClockPages(
                 }
             }
         }
-        if (showAlarmEditor) Box(Modifier.offset(x = pane + 24.dp).width(pane).fillMaxHeight()
-            .graphicsLayer { alpha = if (editorVisible) 1f else 0f }
-            .inactiveClockPane(!editorVisible)) { alarmEditor() }
+
     }
 }
 

@@ -38,6 +38,15 @@ class PhaseThreeAlarmTest {
         assertNull(complete.finishUserOccurrence(7, at, null)!!.ringingAt)
     }
 
+    @Test fun emergencyOnlyStopsTheMatchingUnfinishedMission() {
+        assertSame(ring, ring.finishEmergencyOccurrence(7, at - 1))
+        val completed = ring.copy(missionIndex = ring.missions.size)
+        assertSame(completed, completed.finishEmergencyOccurrence(7, at))
+        assertNull(ring.finishEmergencyOccurrence(7, at)!!.ringingAt)
+        val temporary = ring.copy(wake = ring.wake.copy(deleteAfterDismiss = true))
+        assertNull(temporary.finishEmergencyOccurrence(7, at))
+    }
+
     @Test fun allowedSnoozePreservesMissionProgressAndIncrementsCount() {
         val second = ring.copy(missionIndex = 1, snoozeCount = 2)
         val paused = second.finishUserOccurrence(7, at, at + 60_000)!!

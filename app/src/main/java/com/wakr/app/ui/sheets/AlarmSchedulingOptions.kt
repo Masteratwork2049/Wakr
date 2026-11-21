@@ -46,43 +46,53 @@ internal fun WakeOptions.forAlarmSave(days: Set<java.time.DayOfWeek>, time: Loca
         pausedUntilEpochDay = pausedUntilEpochDay.takeIf { days.isNotEmpty() }, deleteAfterDismiss = deleteAfterDismiss && days.isEmpty())
 }
 
+internal enum class AlarmSchedulePart { ALL, BASICS, SCHEDULE }
+
+@Composable
+internal fun AutoDeleteRow(wake: WakeOptions, setWake: (WakeOptions) -> Unit) {
+    AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
+        setWake(wake.copy(deleteAfterDismiss = it))
+    }
+}
+
 @Composable
 internal fun AlarmSchedulingOptions(
     wake: WakeOptions, once: Boolean, editing: Boolean, hour: Int, minute: Int, initialRelative: Boolean,
     setTime: (LocalTime) -> Unit, setWake: (WakeOptions) -> Unit,
     setDays: (Set<java.time.DayOfWeek>) -> Unit,
+    part: AlarmSchedulePart = AlarmSchedulePart.ALL,
 ) {
     var dialog by rememberSaveable { mutableStateOf(if (initialRelative) "Alarm in…" else "") }
     val zone = wake.timeZoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
-    if (once) {
-        AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
-            setWake(wake.copy(deleteAfterDismiss = it))
+    if (once && part == AlarmSchedulePart.ALL) AutoDeleteRow(wake, setWake)
+    if (part != AlarmSchedulePart.SCHEDULE) {
+        AlarmOptionRow("Type time", Icons.Outlined.Edit) { dialog = "Type time" }
+        if (!editing) {
+            AlarmOptionDivider()
+            AlarmOptionRow("Alarm in…", Icons.Outlined.Schedule) { dialog = "Alarm in…" }
         }
-    }
-    AlarmOptionRow("Type time", Icons.Outlined.Edit) { dialog = "Type time" }
-    if (!editing) {
         AlarmOptionDivider()
-        AlarmOptionRow("Alarm in…", Icons.Outlined.Schedule) { dialog = "Alarm in…" }
+        AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
     }
-    AlarmOptionDivider()
-    AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
-    if (once) {
-        AlarmOptionRow("Schedule alarm", Icons.Outlined.CalendarMonth, wake.scheduledDateEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Next occurrence") { dialog = "Schedule alarm" }
-    } else AlarmOptionRow("Pause until", Icons.Outlined.CalendarMonth, wake.pausedUntilEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Off") { dialog = "Pause until" }
-    AlarmOptionRow("Time zone", Icons.Outlined.Language, wake.timeZoneId ?: "Device time zone") { dialog = "Time zone" }
-    AlarmOptionRow("Silence after", Icons.Outlined.Timer, wake.silenceAfterMin?.let { if (it == 0) "Never" else "$it min" } ?: "App default") { dialog = "Silence after" }
-    AlarmOptionRow("Repeat missed alarm", Icons.Outlined.Repeat, missedAlarmCountLabel(wake.repeatMissedCount)) { dialog = "Repeat missed alarm" }
-    if (wake.repeatMissedCount != 0) AlarmOptionRow("Repeat interval", Icons.Outlined.Snooze, "${wake.reRingIntervalMin} min") { dialog = "Repeat interval" }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val hasFlash = remember(context) {
-        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)
-    }
-    if (hasFlash) {
-        AlarmOptionSwitchRow("Flash", Icons.Outlined.FlashlightOn, wake.flashEnabled) {
-            setWake(wake.copy(flashEnabled = it))
+    if (part != AlarmSchedulePart.BASICS) {
+        if (once) {
+            AlarmOptionRow("Schedule alarm", Icons.Outlined.CalendarMonth, wake.scheduledDateEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Next occurrence") { dialog = "Schedule alarm" }
+        } else AlarmOptionRow("Pause until", Icons.Outlined.CalendarMonth, wake.pausedUntilEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Off") { dialog = "Pause until" }
+        AlarmOptionRow("Time zone", Icons.Outlined.Language, wake.timeZoneId ?: "Device time zone") { dialog = "Time zone" }
+        AlarmOptionRow("Silence after", Icons.Outlined.Timer, wake.silenceAfterMin?.let { if (it == 0) "Never" else "$it min" } ?: "App default") { dialog = "Silence after" }
+        AlarmOptionRow("Repeat missed alarm", Icons.Outlined.Repeat, missedAlarmCountLabel(wake.repeatMissedCount)) { dialog = "Repeat missed alarm" }
+        if (wake.repeatMissedCount != 0) AlarmOptionRow("Repeat interval", Icons.Outlined.Snooze, "${wake.reRingIntervalMin} min") { dialog = "Repeat interval" }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val hasFlash = remember(context) {
+            context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)
         }
+        if (hasFlash) {
+            AlarmOptionSwitchRow("Flash", Icons.Outlined.FlashlightOn, wake.flashEnabled) {
+                setWake(wake.copy(flashEnabled = it))
+            }
+        }
+        SwitchRow("Lock alarm", "Require unlocking before editing", wake.isLocked) { setWake(wake.copy(isLocked = it)) }
     }
-    SwitchRow("Lock alarm", "Require unlocking before editing", wake.isLocked) { setWake(wake.copy(isLocked = it)) }
     if (dialog == "") return
     if (dialog == "Schedule alarm" || dialog == "Pause until") {
         val scheduled = dialog == "Schedule alarm"

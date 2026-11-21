@@ -52,7 +52,7 @@ data class WakeOptions(
 )
 
 enum class WakeOutcome(val label: String) {
-    DISMISSED("Dismissed"), MISSED("Missed"), STILL_AWAKE_FAILED("Still-awake check failed"),
+    DISMISSED("Dismissed"), EMERGENCY_STOP("Emergency stop"), MISSED("Missed"), STILL_AWAKE_FAILED("Still-awake check failed"),
 }
 
 /** Label and scheduled time are snapshots so history survives alarm edits and deletion. */

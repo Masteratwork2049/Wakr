@@ -22,3 +22,7 @@ internal fun Alarm.finishUserOccurrence(id: Long, at: Long, snoozeUntil: Long?):
     if (snoozeUntil == null && missionsRemaining || snoozeUntil != null && !canSnooze()) return this
     return finishOccurrence(id, at, snoozeUntil)
 }
+
+/** Only an active, unfinished mission offers an emergency stop. */
+internal fun Alarm.finishEmergencyOccurrence(id: Long, at: Long): Alarm? =
+    if (missionsRemaining) finishOccurrence(id, at, null) else this

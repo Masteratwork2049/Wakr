@@ -29,6 +29,8 @@ Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, a
 
 ## Final ringing-screen pass
 
+Implemented in the [Phase 3 interface update](PHASE_3.md).
+
 - Give the ringing screen a two-way slider with **Snooze · X min** visible on the left and **Dismiss** visible on the right before dragging. Read the snooze duration from Settings. Sliding left snoozes and sliding right dismisses. Provide equivalent accessibility actions and retain Wakr’s existing motion and touch feedback.
 - Add **Mute** for the current ringing occurrence. Muting silences its sound while leaving the alarm and its snooze and dismiss controls active.
 - Add a separate **Emergency** hold-to-stop action for a ringing alarm with an active mission. Record its use as an emergency stop in wake history. Use the mission runner’s dismissal rules.

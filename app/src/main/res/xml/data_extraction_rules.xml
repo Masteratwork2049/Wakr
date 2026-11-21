@@ -2,6 +2,7 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="device_sharedpref" path="alarm_schedule.xml" />
+        <exclude domain="device_sharedpref" path="emergency_stops.xml" />
         <exclude domain="sharedpref" path="." />
         <exclude domain="file" path="." />
     </cloud-backup>

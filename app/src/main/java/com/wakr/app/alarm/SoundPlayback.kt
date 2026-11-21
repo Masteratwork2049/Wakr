@@ -64,7 +64,7 @@ internal class SoundPlayback(private val backend: Backend) {
         }
     }
 
-    /** Preview-only pause retains the prepared player and its position, but releases audio focus. */
+    /** Pause retains the prepared player and its position, but releases audio focus. */
     fun pause() {
         if (!active || paused) return
         paused = true
