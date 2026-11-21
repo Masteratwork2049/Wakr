@@ -3,6 +3,7 @@ package com.wakr.app.alarm
 import android.os.SystemClock
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
@@ -134,6 +136,8 @@ internal fun EmergencyStopButton(onStop: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(
         Modifier.fillMaxWidth()
+            .clip(CircleShape)
+            .background(colors.errorContainer.copy(alpha = .55f))
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 onClick(label = "Emergency stop confirmation") { showAccessibleConfirmation = true; true }
@@ -166,7 +170,7 @@ internal fun EmergencyStopButton(onStop: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text("Emergency stop", style = MaterialTheme.typography.labelLarge, color = colors.error)
+        Text("Emergency stop", style = MaterialTheme.typography.labelLarge, color = colors.onErrorContainer)
         Text("Hold for 10 seconds", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         if (hold > 0f) LinearProgressIndicator(progress = { hold }, modifier = Modifier.fillMaxWidth(), color = colors.error)
     }

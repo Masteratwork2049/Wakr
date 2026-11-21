@@ -296,7 +296,8 @@ internal fun AlarmRingingScreen(
 
 @Composable
 private fun AlarmSoundActions(muted: Boolean, onMute: () -> Unit, onEmergency: (() -> Unit)?) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedButton(onClick = onMute) { Text(if (muted) "Unmute" else "Mute") }
         if (onEmergency != null) EmergencyStopButton(onEmergency)
     }
