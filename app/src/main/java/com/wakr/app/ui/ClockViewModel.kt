@@ -31,6 +31,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.map
+import com.wakr.app.core.isPreRingProtected
+import com.wakr.app.core.missionsRemaining
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -97,7 +100,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     val settings: StateFlow<ClockSettings> =
         store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, initialSettings)
     val alarms: StateFlow<List<Alarm>> =
-        store.alarms.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        store.alarms.map { list -> list.filterNot { it.isWakeCheckRetry } }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val wakeHistory = store.wakeHistory
     val cities: StateFlow<List<WorldCity>> =
         store.cities.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -144,22 +147,47 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
 
     /* ── Alarms ─────────────────────────────────────────────────────────────────────────────── */
 
+    private data class AlarmPermit(val occurrence: Long, val expiresAt: Long)
+    private val alarmPermits = mutableMapOf<Long, AlarmPermit>()
+
+    fun needsPreRingChallenge(alarm: Alarm): Boolean {
+        val now = java.time.ZonedDateTime.now()
+        if (!alarm.isPreRingProtected(now)) return false
+        val permit = alarmPermits[alarm.id]
+        return permit == null || permit.expiresAt < System.currentTimeMillis() ||
+            permit.occurrence != alarm.nextFire(now)?.toInstant()?.toEpochMilli()
+    }
+
+    fun authorizePreRingChanges(alarms: List<Alarm>) {
+        val now = java.time.ZonedDateTime.now()
+        val expiresAt = System.currentTimeMillis() + 120_000
+        alarmPermits.entries.removeAll { it.value.expiresAt < System.currentTimeMillis() }
+        alarms.forEach { alarm ->
+            alarm.nextFire(now)?.toInstant()?.toEpochMilli()?.let { alarmPermits[alarm.id] = AlarmPermit(it, expiresAt) }
+        }
+    }
+
+    private fun canChange(alarm: Alarm): Boolean =
+        !(alarm.ringingAt != null && alarm.missionsRemaining) && !needsPreRingChallenge(alarm)
+
     fun pauseOrResumeAll() = viewModelScope.launch {
         val updated = store.updateAlarms { alarms ->
-            val pause = alarms.none { it.pausedByGroup }
-            alarms.map { it.copy(pausedByGroup = pause && it.enabled) }
+            val visible = alarms.filterNot { it.isWakeCheckRetry }
+            val pause = visible.none { it.pausedByGroup }
+            if (pause && visible.any { it.enabled && !canChange(it) }) alarms
+            else alarms.map { if (it.isWakeCheckRetry) it else it.copy(pausedByGroup = pause && it.enabled) }
         }
         AlarmScheduler.scheduleAll(ctx, updated)
     }
 
     fun setAlarmLock(id: Long, locked: Boolean) = viewModelScope.launch {
-        store.updateAlarms { list -> list.map { if (it.id == id) it.copy(wake = it.wake.copy(isLocked = locked)) else it } }
+        store.updateAlarms { list -> list.map { if (it.id == id && canChange(it)) it.copy(wake = it.wake.copy(isLocked = locked)) else it } }
     }
 
     fun skipNext(id: Long) = viewModelScope.launch {
         val now = java.time.ZonedDateTime.now()
         val updated = store.updateAlarms { alarms -> alarms.map { alarm ->
-            val next = if (alarm.id == id && !alarm.wake.isLocked) alarm.nextFire(now) else null
+            val next = if (alarm.id == id && !alarm.wake.isLocked && canChange(alarm)) alarm.nextFire(now) else null
             if (next == null) alarm else alarm.copy(enabled = !alarm.isOneShot, snoozedUntilMillis = null,
                 skippedOccurrenceMillis = next.toInstant().toEpochMilli(),
                 skippedOccurrenceDate = next.withZoneSameInstant(alarm.scheduleZone(now.zone)).toLocalDate())
@@ -169,7 +197,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleAlarm(id: Long) = viewModelScope.launch {
         val next = store.updateAlarms { list -> list.map {
-            if (it.id == id && !it.wake.isLocked) it.copy(ringingAt = null, missedRetries = 0, pausedByGroup = false, enabled = !it.enabled, snoozedUntilMillis = null, skippedOccurrenceMillis = null, skippedOccurrenceDate = null) else it
+            if (it.id == id && !it.wake.isLocked && canChange(it)) it.copy(ringingAt = null, missedRetries = 0, pausedByGroup = false, enabled = !it.enabled, snoozedUntilMillis = null, skippedOccurrenceMillis = null, skippedOccurrenceDate = null) else it
         } }
         next.firstOrNull { it.id == id }?.let { a ->
             if (a.enabled) AlarmScheduler.schedule(ctx, a) else AlarmScheduler.cancel(ctx, id)
@@ -180,26 +208,30 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     fun saveAlarm(draft: Alarm, onSaved: (Alarm) -> Unit = {}) = viewModelScope.launch {
         val id = if (draft.id == 0L) store.nextId() else draft.id
         val saved = draft.copy(id = id, createdAt = if (draft.id == 0L) System.currentTimeMillis() else draft.createdAt)
-        var alarm = saved
+        var applied: Alarm? = null
         store.updateAlarms { current ->
-            alarm = saved.preservingDismissal(current.firstOrNull { it.id == id })
-            (if (current.any { it.id == id }) current.map { if (it.id == id) alarm else it }
-            else current + alarm).sortedWith(compareBy({ it.time.hour }, { it.time.minute }))
+            val existing = current.firstOrNull { it.id == id }
+            if (existing != null && (!canChange(existing) || existing.wake.isLocked)) return@updateAlarms current
+            val alarm = saved.preservingDismissal(existing)
+            applied = alarm
+            (if (existing == null) current + alarm else current.map { if (it.id == id) alarm else it })
+                .sortedWith(compareBy({ it.time.hour }, { it.time.minute }))
         }
+        val alarm = applied ?: return@launch
         AlarmScheduler.schedule(ctx, alarm)
         onSaved(alarm)
     }
 
-    fun deleteAlarm(id: Long) = viewModelScope.launch {
-        // The UI owns the short exit animation now, so the persisted alarm can be removed
-        // immediately. AlarmsScreen retains the card visually until its exit completes.
-        AlarmScheduler.cancel(ctx, id)
-        store.updateAlarms { list -> list.filterNot { it.id == id } }
-    }
+    fun deleteAlarm(id: Long) = deleteAlarms(setOf(id))
 
     fun deleteAlarms(ids: Set<Long>) = viewModelScope.launch {
-        ids.forEach { id -> AlarmScheduler.cancel(ctx, id) }
-        store.updateAlarms { list -> list.filterNot { it.id in ids } }
+        val removed = mutableSetOf<Long>()
+        store.updateAlarms { alarms ->
+            alarms.filterNot { alarm ->
+                (alarm.id in ids && !alarm.wake.isLocked && canChange(alarm)).also { if (it) removed += alarm.id }
+            }
+        }
+        removed.forEach { AlarmScheduler.cancel(ctx, it) }
     }
 
     /* ── World clock ────────────────────────────────────────────────────────────────────────── */

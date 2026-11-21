@@ -27,6 +27,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <!-- Puts the dismiss screen in front of a locked phone. Degrades to a heads-up banner. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -37,6 +43,9 @@
     <!-- Battery optimization exemption for background timers and alarms. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <queries>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
     <application
         android:name=".ClockApplication"
         android:allowBackup="true"
@@ -152,6 +161,7 @@
             android:exported="false" />
 
         <receiver android:name=".alarm.ClockActionReceiver" android:directBootAware="true" android:exported="false" />
+        <receiver android:name=".alarm.WakeCheckReceiver" android:exported="false" />
 
         <!--
           The clock widget. exported="false" is correct: every one of these broadcasts comes from

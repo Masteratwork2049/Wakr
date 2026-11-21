@@ -34,6 +34,7 @@ data class WakeOptions(
     val fadeInSeconds: Int = 0,
     val vibrationPattern: VibrationPattern = VibrationPattern.DEFAULT,
     val flashEnabled: Boolean = false,
+    val flashStrobeEnabled: Boolean = false,
     val voiceAnnounceEnabled: Boolean = false,
     val snoozeEnabled: Boolean = true,
     val snoozeDurationMin: Int? = null,

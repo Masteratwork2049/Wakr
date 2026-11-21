@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.wakr.app.R
 import com.wakr.app.core.Alarm
+import com.wakr.app.core.isPreRingProtected
 import com.wakr.app.data.ClockStore
 import java.time.Instant
 import java.time.ZoneId
@@ -61,7 +62,10 @@ internal object UpcomingAlarm {
             .setContentTitle("Upcoming alarm · $time").setContentText(alarm.label.ifBlank { "Alarm" })
             .setContentIntent(Notifications.openApp(context, Notifications.TAB_ALARMS))
             .setSilent(true).setTimeoutAfter((at-System.currentTimeMillis()).coerceAtLeast(1))
-            .addAction(0,"Dismiss this occurrence",pending(context,alarm.id,at,SKIP)).build()
+            .apply {
+                if (!alarm.wake.isLocked && !alarm.isPreRingProtected())
+                    addAction(0,"Dismiss this occurrence",pending(context,alarm.id,at,SKIP))
+            }.build()
         try { NotificationManagerCompat.from(context).notify(tag(alarm.id),0,n) } catch (_: SecurityException) { }
     }
     suspend fun receive(context: Context, intent: Intent) {
@@ -72,7 +76,7 @@ internal object UpcomingAlarm {
             store.alarmsNow().firstOrNull { it.id == id }?.let { show(context,it,at) }
         } else {
             val updated = store.updateAlarms { list -> list.map { alarm ->
-                if (alarm.id != id || !matches(alarm,at) || at <= System.currentTimeMillis()) alarm
+                if (alarm.id != id || alarm.wake.isLocked || alarm.isPreRingProtected() || !matches(alarm,at) || at <= System.currentTimeMillis()) alarm
                 else if (alarm.isOneShot) alarm.copy(enabled=false,snoozedUntilMillis=null,skippedOccurrenceMillis=at)
                 else alarm.copy(skippedOccurrenceMillis=at,skippedOccurrenceDate=Instant.ofEpochMilli(at).atZone(alarm.scheduleZone(ZoneId.systemDefault())).toLocalDate(),snoozedUntilMillis=null)
             } }

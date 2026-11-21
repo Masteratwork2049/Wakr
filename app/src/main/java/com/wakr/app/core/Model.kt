@@ -43,6 +43,12 @@ data class Alarm(
     val pausedByGroup: Boolean = false,
     val ringingAt: Long? = null,
     val missedRetries: Int = 0,
+    val snoozeCount: Int = 0,
+    val missionIndex: Int = 0,
+    val rebootCount: Int = 0,
+    val firstRingAt: Long? = null,
+    val privateMissionCount: Int = 0,
+    val isWakeCheckRetry: Boolean = false,
 ) {
     val isOneShot: Boolean get() = days.isEmpty()
 

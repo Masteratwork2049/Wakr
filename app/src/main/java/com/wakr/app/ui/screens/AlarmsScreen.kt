@@ -511,6 +511,8 @@ internal fun InlineAlarmEditorPanel(
     var label by remember(editingAlarm?.id) { mutableStateOf(editingAlarm?.label ?: "") }
 
     var wake by androidx.compose.runtime.saveable.rememberSaveable(editingAlarm?.id, stateSaver = com.wakr.app.ui.sheets.WakeDraftSaver) { mutableStateOf(editingAlarm?.wake ?: com.wakr.app.core.WakeOptions()) }
+    var missions by androidx.compose.runtime.saveable.rememberSaveable(editingAlarm?.id,
+        stateSaver = com.wakr.app.ui.sheets.MissionDraftSaver) { mutableStateOf(editingAlarm?.missions.orEmpty()) }
     val systemSoundPicker = com.wakr.app.ui.sheets.rememberAlarmSoundSelector(soundUri) { soundUri = it }
     val soundLabel by androidx.compose.runtime.produceState(initialValue = "Default", key1 = soundUri, key2 = context) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -532,6 +534,7 @@ internal fun InlineAlarmEditorPanel(
     ) {
         AlarmPickerSheetContent(
             wake = wake, setWake = { wake = it }, setDays = { days = it },
+            missions = missions, onMissions = { missions = it },
             title = if (editingAlarm == null || editingAlarm.id == 0L) "New Alarm" else "Edit Alarm",
             hour = hour,
             minute = minute,
@@ -560,6 +563,7 @@ internal fun InlineAlarmEditorPanel(
                 val time = LocalTime.of(saveHour, minute)
                 val base = editingAlarm ?: Alarm(0L, time)
                 val alarmToSave = base.copy(
+                    missions = missions,
                     wake = wake.forAlarmSave(days, time),
                     time = time,
                     days = days,

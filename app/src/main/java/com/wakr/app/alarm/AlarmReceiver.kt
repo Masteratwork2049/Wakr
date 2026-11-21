@@ -27,6 +27,7 @@ class AlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 when (intent.action) {
+                    ACTION_RESUME_RING -> startRing(app, intent.getLongExtra(EXTRA_ID, -1L), intent.getLongExtra(UpcomingAlarm.AT, -1L))
                     ACTION_FIRE -> fire(app, intent.getLongExtra(EXTRA_ID, -1L), intent.getLongExtra(UpcomingAlarm.AT, 0))
                     UpcomingAlarm.SHOW, UpcomingAlarm.SKIP -> UpcomingAlarm.receive(app, intent)
                     ACTION_TIMER_EXPIRED -> timerExpired(app)
@@ -44,7 +45,12 @@ class AlarmReceiver : BroadcastReceiver() {
             if (alarm.id != id || !alarm.enabled || (at > 0 && !UpcomingAlarm.matches(alarm, at))) alarm
             else {
                 firing = alarm
-                alarm.copy(ringingAt = at, missedRetries = if (alarm.snoozedUntilMillis == at) alarm.missedRetries else 0, enabled = !alarm.isOneShot, snoozedUntilMillis = null, skippedOccurrenceMillis = at.takeIf { it > 0 } ?: alarm.skippedOccurrenceMillis,
+                val continuation = alarm.snoozedUntilMillis == at
+                alarm.copy(ringingAt = at, firstRingAt = alarm.firstRingAt?.takeIf { continuation } ?: at,
+                    snoozeCount = alarm.snoozeCount.takeIf { continuation } ?: 0,
+                    missionIndex = alarm.missionIndex.takeIf { continuation } ?: 0,
+                    rebootCount = alarm.rebootCount.takeIf { continuation } ?: 0,
+                    missedRetries = if (continuation) alarm.missedRetries else 0, enabled = !alarm.isOneShot, snoozedUntilMillis = null, skippedOccurrenceMillis = at.takeIf { it > 0 } ?: alarm.skippedOccurrenceMillis,
                     skippedOccurrenceDate = if (at > 0) java.time.Instant.ofEpochMilli(at).atZone(alarm.scheduleZone(java.time.ZoneId.systemDefault())).toLocalDate()
                         else java.time.LocalDate.now())
             }
@@ -53,13 +59,13 @@ class AlarmReceiver : BroadcastReceiver() {
         UpcomingAlarm.hide(context,id)
         cleared.firstOrNull { it.id == id }?.let { AlarmScheduler.schedule(context, it) }
 
-        ContextCompat.startForegroundService(
-            context,
-            Intent(context, AlarmService::class.java)
-                .setAction(AlarmService.ACTION_START)
-                .putExtra(EXTRA_ID, alarm.id)
-                .putExtra(UpcomingAlarm.AT, at),
-        )
+        startRing(context, alarm.id, at)
+    }
+
+    private fun startRing(context: Context, id: Long, at: Long) {
+        if (id < 0 || at <= 0) return
+        ContextCompat.startForegroundService(context, Intent(context, AlarmService::class.java)
+            .setAction(AlarmService.ACTION_START).putExtra(EXTRA_ID, id).putExtra(UpcomingAlarm.AT, at))
     }
 
     private suspend fun timerExpired(context: Context) {
@@ -77,6 +83,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        const val ACTION_RESUME_RING = "com.wakr.app.RESUME_RING"
         const val ACTION_FIRE = "com.wakr.app.FIRE"
         const val ACTION_TIMER_EXPIRED = "com.wakr.app.TIMER_EXPIRED"
         const val EXTRA_ID = "id"

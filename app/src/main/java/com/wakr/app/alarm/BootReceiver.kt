@@ -27,18 +27,28 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                reschedule(app)
+                reschedule(app, intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED)
             } finally {
                 pending.finish()
             }
         }
     }
 
-    private suspend fun reschedule(context: Context) {
-        val alarms = RuntimeAlarms.read(context)
+    private suspend fun reschedule(context: Context, recovering: Boolean) {
+        val recover = mutableSetOf<Long>()
+        val alarms = if (!recovering) RuntimeAlarms.read(context) else RuntimeAlarms.update(context) { list ->
+            list.map { alarm ->
+                if (alarm.ringingAt != null && alarm.rebootCount < alarm.wake.rebootSurvivalMax) {
+                    recover += alarm.id
+                    alarm.copy(rebootCount = alarm.rebootCount + 1)
+                } else if (alarm.ringingAt != null) alarm.copy(ringingAt = null) else alarm
+            }
+        }
         Notifications.ensureChannels(context)
         AlarmScheduler.scheduleAll(context, alarms)
+        alarms.filter { it.id in recover }.forEach { AlarmScheduler.recoverRinging(context, it) }
         if (!RuntimeAlarms.unlocked(context)) return
+        WakeChecks.restore(context)
         kotlinx.coroutines.withContext(Dispatchers.Main.immediate) { com.wakr.app.overlay.OverlayManager.init(context) }
         val store = ClockStore(context)
         // A reboot resets elapsedRealtime, so any stored deadline is meaningless. Rebuild the

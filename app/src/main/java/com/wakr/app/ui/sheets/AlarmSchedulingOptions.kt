@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.wakr.app.data.toJson
 import com.wakr.app.data.toWakeOptions
 import com.wakr.app.core.WakeOptions
+import com.wakr.app.core.needsMissions
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -148,7 +149,10 @@ internal fun AlarmSchedulingOptions(
                                 "Weekends" -> com.wakr.app.core.Alarm.WEEKENDS
                                 else -> java.time.DayOfWeek.entries.toSet()
                             })
-                            "Silence after" -> setWake(wake.copy(silenceAfterMin = if (value == "Never") 0 else value.toIntOrNull()))
+                            "Silence after" -> setWake(wake.copy(
+                                difficulty = if (wake.needsMissions) com.wakr.app.core.AlarmDifficulty.CUSTOM else wake.difficulty,
+                                silenceAfterMin = if (value == "Never") 0 else value.toIntOrNull(),
+                            ))
                             "Repeat interval" -> setWake(wake.copy(reRingIntervalMin = value.toInt()))
                             else -> setWake(wake.copy(repeatMissedCount = if (value == "Indefinitely") -1 else value.toIntOrNull() ?: 0))
                         }

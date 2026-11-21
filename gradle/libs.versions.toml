@@ -46,6 +46,7 @@ androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shape
 
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
 androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 android-json-test = { module = "com.vaadin.external.google:android-json", version = "0.0.20131108.vaadin1" }
 

@@ -14,6 +14,17 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import com.wakr.app.core.missOccurrence
+import com.wakr.app.core.Alarm
+import com.wakr.app.core.AlarmSoundMode
+import com.wakr.app.core.VibrationPattern
+import com.wakr.app.core.canSnooze
+import com.wakr.app.core.missionsRemaining
+import com.wakr.app.core.WakeOutcome
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.speech.tts.TextToSpeech
 import com.wakr.app.R
 import com.wakr.app.data.ClockStore
 import com.wakr.app.data.SILENT
@@ -62,6 +73,9 @@ class AlarmService : Service() {
     private var occurrence: Pair<Long, Long>? = null
     private var torchId: String? = null
     private var silenceJob: Job? = null
+    private var effectsJob: Job? = null
+    private var tts: TextToSpeech? = null
+    private var shakeListener: SensorEventListener? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -89,9 +103,24 @@ class AlarmService : Service() {
                 val settings = RuntimeAlarms.settings(this@AlarmService)
                 occurrence = id to at
                 current = this@AlarmService
-                setFlash(alarm.wake.flashEnabled)
-                ring(ringingNotification(this@AlarmService, id, alarm.label.ifBlank { "Alarm" }, at),
-                    alarm.soundUri, alarm.vibrate, ALARM_PATTERN, alarm.wake.silenceAfterMin ?: settings.alarms.silenceAfterMinutes)
+                val resource = listOf(R.raw.alarm_fallback, R.raw.alarm_sunrise, R.raw.alarm_daybreak)
+                val day = java.time.Instant.ofEpochMilli(alarm.firstRingAt ?: at)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate().toEpochDay()
+                val uri = when (alarm.wake.soundMode) {
+                    AlarmSoundMode.ONE -> alarm.soundUri
+                    AlarmSoundMode.SURPRISE -> "android.resource://$packageName/${resource[Math.floorMod(day, resource.size.toLong()).toInt()]}"
+                    AlarmSoundMode.LOCAL_MUSIC -> alarm.wake.musicUris.randomOrNull() ?: alarm.soundUri
+                }
+                val pattern = when (alarm.wake.vibrationPattern) {
+                    VibrationPattern.DEFAULT -> ALARM_PATTERN
+                    VibrationPattern.SOS -> longArrayOf(0, 180, 130, 180, 130, 180, 280, 550, 130, 550, 130, 550, 500)
+                    VibrationPattern.PULSE -> longArrayOf(0, 220, 220, 550, 330)
+                    VibrationPattern.HEARTBEAT -> longArrayOf(0, 120, 130, 180, 500)
+                }
+                ring(ringingNotification(this@AlarmService, alarm, at), uri, alarm.vibrate, pattern,
+                    alarm.wake.silenceAfterMin ?: settings.alarms.silenceAfterMinutes,
+                    alarm.wake.volumePercent, alarm.wake.fadeInSeconds)
+                startEffects(alarm, at)
             }
         }
     }
@@ -106,7 +135,7 @@ class AlarmService : Service() {
                 }
                 val settings = store.settingsNow()
                 occurrence = null
-                setFlash(false)
+                stopEffects()
                 ring(timerNotification(this@AlarmService), settings.timers.soundUri,
                     settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
             }
@@ -114,13 +143,13 @@ class AlarmService : Service() {
     }
 
     private fun ring(notification: android.app.Notification, uri: String?, shouldVibrate: Boolean,
-                     pattern: LongArray, silenceMinutes: Int) {
+                     pattern: LongArray, silenceMinutes: Int, volume: Int = 100, fadeSeconds: Int = 0) {
         silenceJob?.cancel()
         sound.stop()
         vibrator?.cancel()
         foreground(notification)
         active = true
-        if (uri != SILENT) sound.play(uri)
+        if (uri != SILENT) sound.play(uri, volume, fadeSeconds)
         if (shouldVibrate) vibrate(pattern)
         // This timeout belongs to the active ringer, not a pending replacement's load job.
         silenceJob = scope.launch {
@@ -129,10 +158,19 @@ class AlarmService : Service() {
             val token = occurrence
             if (token != null) starts.withLock {
                 if (occurrence != token) return@launch
-                val alarms = RuntimeAlarms.update(this@AlarmService) { list -> list.map { a ->
-                    if (a.id == token.first) a.missOccurrence(token.second, System.currentTimeMillis()) else a
+                var before: Alarm? = null
+                val alarms = RuntimeAlarms.update(this@AlarmService) { list -> list.map { alarm ->
+                    if (alarm.id == token.first && alarm.ringingAt == token.second) {
+                        before = alarm
+                        alarm.missOccurrence(token.second, System.currentTimeMillis())
+                    } else alarm
                 } }
                 alarms.firstOrNull { it.id == token.first }?.let { AlarmScheduler.schedule(this@AlarmService, it) }
+                before?.takeUnless { it.isWakeCheckRetry }?.let { missed ->
+                    if (RuntimeAlarms.unlocked(this@AlarmService)) {
+                        ClockStore(this@AlarmService).putWakeLog(WakeChecks.log(missed, token.second, null, WakeOutcome.MISSED))
+                    }
+                }
             }
             stopSelf()
         }
@@ -161,6 +199,83 @@ class AlarmService : Service() {
         vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0), attrs)
     }
 
+    private fun startEffects(alarm: Alarm, at: Long) {
+        stopEffects()
+        if (alarm.wake.flashEnabled && !alarm.wake.flashStrobeEnabled) setFlash(true)
+        if (alarm.wake.flashStrobeEnabled) {
+            effectsJob = scope.launch {
+                try {
+                    while (true) {
+                        setFlash(true)
+                        delay(350)
+                        setFlash(false)
+                        delay(650)
+                    }
+                } finally { setFlash(false) }
+            }
+        }
+        if (alarm.wake.voiceAnnounceEnabled) {
+            tts = TextToSpeech(this) { status ->
+                val engine = tts
+                if (engine != null && status == TextToSpeech.SUCCESS && occurrence == (alarm.id to at)) {
+                    val availableVoice = runCatching { engine.voices }.getOrNull().orEmpty()
+                        .firstOrNull { !it.isNetworkConnectionRequired && it.locale.language == java.util.Locale.getDefault().language }
+                    if (availableVoice != null) {
+                        engine.voice = availableVoice
+                        scope.launch {
+                            while (tts === engine && occurrence == (alarm.id to at)) {
+                                val time = android.text.format.DateFormat.getTimeFormat(this@AlarmService).format(java.util.Date())
+                                engine.speak(listOf(time, alarm.label).filter { it.isNotBlank() }.joinToString(". "),
+                                    TextToSpeech.QUEUE_FLUSH, null, "alarm:$at")
+                                delay(20_000)
+                            }
+                        }
+                    }
+                }
+            }.apply {
+                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            }
+        }
+        if (alarm.wake.shakeToSnooze && alarm.canSnooze()) {
+            val manager = getSystemService(SensorManager::class.java)
+            val sensor = manager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            if (sensor != null) {
+                val listener = object : SensorEventListener {
+                    var lastShake = Long.MIN_VALUE / 2
+                    var triggered = false
+                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+                    override fun onSensorChanged(event: SensorEvent) {
+                        val (x, y, z) = event.values
+                        if (triggered || x * x + y * y + z * z < 26f * 26f) return
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        val gap = now - lastShake
+                        if (gap < 120) return
+                        lastShake = now
+                        if (gap <= 850) {
+                            triggered = true
+                            sendBroadcast(Intent(this@AlarmService, ClockActionReceiver::class.java)
+                                .setAction(ClockActionReceiver.ACTION_SNOOZE)
+                                .putExtra(AlarmReceiver.EXTRA_ID, alarm.id).putExtra(UpcomingAlarm.AT, at))
+                        }
+                    }
+                }
+                shakeListener = listener
+                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+            }
+        }
+    }
+
+    private fun stopEffects() {
+        effectsJob?.cancel()
+        effectsJob = null
+        setFlash(false)
+        tts?.shutdown()
+        tts = null
+        shakeListener?.let { getSystemService(SensorManager::class.java)?.unregisterListener(it) }
+        shakeListener = null
+    }
+
     private fun setFlash(enabled: Boolean) {
         val cameras = getSystemService(android.hardware.camera2.CameraManager::class.java) ?: return
         runCatching {
@@ -180,7 +295,7 @@ class AlarmService : Service() {
 
     override fun onDestroy() {
         if (current === this) current = null
-        setFlash(false)
+        stopEffects()
         active = false
         silenceJob?.cancel()
         sound.stop()
@@ -207,27 +322,41 @@ class AlarmService : Service() {
             context.stopService(Intent(context, AlarmService::class.java))
         }
 
-        private fun ringingNotification(context: Context, id: Long, label: String, at: Long) =
-            NotificationCompat.Builder(context, Notifications.CHANNEL_ALARM)
+        fun refreshRing(id: Long, at: Long, leaving: Boolean = false) {
+            val service = current ?: return
+            if (service.occurrence != (id to at)) return
+            service.scope.launch {
+                val alarm = RuntimeAlarms.read(service).firstOrNull { it.id == id && it.ringingAt == at } ?: return@launch
+                if (!leaving || alarm.wake.relaunchOnLeave && alarm.missionsRemaining) {
+                    runCatching { NotificationManagerCompat.from(service).notify(Notifications.ID_RINGING, ringingNotification(service, alarm, at)) }
+                }
+            }
+        }
+
+        private fun ringingNotification(context: Context, alarm: Alarm, at: Long): android.app.Notification {
+            val label = alarm.label.ifBlank { "Alarm" }
+            val id = alarm.id
+            val open = AlarmRingActivity.intent(context, id, label, at)
+            return NotificationCompat.Builder(context, Notifications.CHANNEL_ALARM)
                 .setSmallIcon(R.drawable.ic_stat_alarm)
                 .setContentTitle(label)
-                .setContentText("Alarm")
+                .setContentText(if (alarm.missionsRemaining) "Complete your wake-up missions" else "Alarm")
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOngoing(true)
                 .setAutoCancel(false)
-                // Android 14+ may allow ongoing notifications to be swiped away.
-                // Treat that explicit dismissal like the visible Dismiss action.
-                .setDeleteIntent(Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 12, id, at))
-                // The full-screen intent is what wakes the device and puts the dismiss screen in
-                // front of a locked phone. It degrades to a heads-up banner where the permission
-                // is not held. That is still usable, since both actions are on the notification.
-                .setFullScreenIntent(AlarmRingActivity.intent(context, id, label, at), true)
-                .setContentIntent(AlarmRingActivity.intent(context, id, label, at))
-                .addAction(0, "Snooze", Notifications.broadcast(context, ClockActionReceiver.ACTION_SNOOZE, 10, id, at))
-                .addAction(0, "Dismiss", Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 11, id, at))
-                .build()
+                .setFullScreenIntent(open, true)
+                .setContentIntent(open)
+                .apply {
+                    if (alarm.canSnooze()) addAction(0, "Snooze", Notifications.broadcast(context, ClockActionReceiver.ACTION_SNOOZE, 10, id, at))
+                    if (alarm.missionsRemaining) addAction(0, "Open missions", open)
+                    else {
+                        setDeleteIntent(Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 12, id, at))
+                        addAction(0, "Dismiss", Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 11, id, at))
+                    }
+                }.build()
+        }
 
         private fun timerNotification(context: Context) =
             NotificationCompat.Builder(context, Notifications.CHANNEL_ALARM)

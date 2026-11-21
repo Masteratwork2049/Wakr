@@ -160,6 +160,7 @@ object Notifications {
     const val TAB_ALARMS = "alarms"
     const val TAB_TIMERS = "timers"
     const val TAB_STOPWATCH = "stopwatch"
+    const val TAB_MORNING = "morning"
     const val EXTRA_TAB = "tab"
 
     fun openApp(context: Context, tab: String): PendingIntent = PendingIntent.getActivity(

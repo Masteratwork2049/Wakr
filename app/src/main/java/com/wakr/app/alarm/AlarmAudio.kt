@@ -18,6 +18,8 @@ internal class AlarmAudio(private val context: Context, private val looping: Boo
     var onFinished: (() -> Unit)? = null
     var onStarted: ((String) -> Unit)? = null
     var onFallback: (() -> Unit)? = null
+    private var volume = 1f
+    private var fadeMillis = 0L
     private val playback: SoundPlayback = SoundPlayback(object : SoundPlayback.Backend {
         override fun requestFocus(changed: (Boolean) -> Unit): Boolean {
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -40,6 +42,10 @@ internal class AlarmAudio(private val context: Context, private val looping: Boo
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
             var onFailure: (() -> Unit)? = null
             var timeout: Runnable? = null
+            var ramp: Job? = null
+            val target = volume
+            val duration = fadeMillis
+            var startedAt = 0L
             return object : SoundPlayback.Player {
                 override fun prepare(ready: () -> Unit, failed: () -> Unit) {
                     onFailure = failed
@@ -67,14 +73,33 @@ internal class AlarmAudio(private val context: Context, private val looping: Boo
                         } finally { runCatching { descriptor?.close() } }
                     }
                 }
-                override fun start() { runCatching { media.start(); Log.i("AlarmAudio", "Playback started on alarm stream"); onStarted?.invoke(source) }.onFailure { onFallback?.invoke(); onFailure?.invoke() } }
-                override fun pause() { runCatching { media.pause() } }
+                override fun start() {
+                    runCatching {
+                        if (startedAt == 0L) startedAt = android.os.SystemClock.elapsedRealtime()
+                        media.setVolume(if (duration == 0L) target else target * .05f, if (duration == 0L) target else target * .05f)
+                        media.start()
+                        onStarted?.invoke(source)
+                        ramp?.cancel()
+                        if (duration > 0) ramp = scope.launch {
+                            while (true) {
+                                val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
+                                val progress = (elapsed.toFloat() / duration).coerceIn(.05f, 1f)
+                                media.setVolume(target * progress, target * progress)
+                                if (elapsed >= duration) break
+                                delay(100)
+                            }
+                        }
+                    }.onFailure { onFallback?.invoke(); onFailure?.invoke() }
+                }
+                override fun pause() { ramp?.cancel(); runCatching { media.pause() } }
                 override fun release() { timeout?.let(handler::removeCallbacks); scope.cancel(); media.release() }
             }
         }
         override fun exhausted() { Log.e("AlarmAudio", "No playable alarm source"); onFallback?.invoke() }
     })
-    fun play(uri: String?) {
+    fun play(uri: String?, volumePercent: Int = 100, fadeInSeconds: Int = 0) {
+        volume = volumePercent.coerceIn(10, 100) / 100f
+        fadeMillis = fadeInSeconds.coerceIn(0, 120) * 1000L
         if (uri == com.wakr.app.data.SILENT) { stop(); return }
         playback.play(listOfNotNull(uri,
             runCatching { RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_ALARM)?.toString() }.getOrNull(),

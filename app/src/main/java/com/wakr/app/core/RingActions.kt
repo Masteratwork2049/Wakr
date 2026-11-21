@@ -3,16 +3,22 @@ package com.wakr.app.core
 /** The occurrence timestamp travels from the firing receiver through every notification action. */
 internal fun Alarm.finishOccurrence(id: Long, at: Long, snoozeUntil: Long?): Alarm? = when {
     this.id != id || ringingAt != at -> this
-    snoozeUntil != null -> copy(enabled = true, snoozedUntilMillis = snoozeUntil, ringingAt = null)
+    snoozeUntil != null -> copy(enabled = true, snoozedUntilMillis = snoozeUntil, ringingAt = null, snoozeCount = snoozeCount + 1)
     temporary -> null
-    else -> copy(ringingAt = null, missedRetries = 0)
+    else -> copy(ringingAt = null, missedRetries = 0, snoozeCount = 0, missionIndex = 0, rebootCount = 0, firstRingAt = null)
 }
 
 internal fun Alarm.missOccurrence(at: Long, now: Long): Alarm {
     if (ringingAt != at) return this
     if (wake.repeatMissedCount >= 0 && missedRetries >= wake.repeatMissedCount) {
-        return copy(ringingAt = null, missedRetries = 0)
+        return copy(ringingAt = null, missedRetries = 0, snoozeCount = 0, missionIndex = 0, rebootCount = 0, firstRingAt = null)
     }
     return copy(enabled = true, ringingAt = null, missedRetries = missedRetries + 1,
         snoozedUntilMillis = now + wake.reRingIntervalMin.coerceAtLeast(1) * 60_000L)
+}
+
+/** Both notification buttons and the ringing activity must pass these occurrence checks. */
+internal fun Alarm.finishUserOccurrence(id: Long, at: Long, snoozeUntil: Long?): Alarm? {
+    if (snoozeUntil == null && missionsRemaining || snoozeUntil != null && !canSnooze()) return this
+    return finishOccurrence(id, at, snoozeUntil)
 }

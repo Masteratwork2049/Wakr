@@ -52,6 +52,8 @@ fun NewAlarmPickerSheet(
     var soundUri by rememberSaveable { mutableStateOf(initial.soundUri) }
 
     var wake by androidx.compose.runtime.saveable.rememberSaveable(initial.id, stateSaver = com.wakr.app.ui.sheets.WakeDraftSaver) { mutableStateOf(initial.wake) }
+    var missions by androidx.compose.runtime.saveable.rememberSaveable(initial.id,
+        stateSaver = com.wakr.app.ui.sheets.MissionDraftSaver) { mutableStateOf(initial.missions) }
     val openSoundSelector = rememberAlarmSoundSelector(soundUri) { soundUri = it }
 
     val soundLabel by androidx.compose.runtime.produceState(initialValue = "Default", key1 = soundUri, key2 = context) {
@@ -69,6 +71,7 @@ fun NewAlarmPickerSheet(
     ) {
         AlarmPickerSheetContent(
             wake = wake, setWake = { wake = it }, setDays = { days = it },
+            missions = missions, onMissions = { missions = it },
             modal = true, initialRelative = relative,
             title = "New Alarm",
             hour = hour,
@@ -97,6 +100,7 @@ fun NewAlarmPickerSheet(
                 val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
                 val updated = initial.copy(
                     id = if (duplicate) 0 else initial.id,
+                    missions = missions,
                     wake = wake.forAlarmSave(days, LocalTime.of(saveHour, minute)),
                     pausedByGroup = false,
                     time = LocalTime.of(saveHour, minute),

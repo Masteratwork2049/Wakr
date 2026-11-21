@@ -5,8 +5,9 @@ Wakr is a Material 3 Expressive alarm and clock app for Android. It builds on [E
 ## Features
 
 - **Alarms:** Tap an alarm to schedule a date, choose a time zone, pause a repeating alarm, or enable **Auto-delete after dismissal** for a one-time alarm. Temporary alarms stay on the grid through snoozes.
-- **Quick alarms:** Hold the **+** button on the Alarms tab for **Alarm in…**. Hold an alarm card for duplication, skipping, locking, selection, or deletion.
-- **Next alarm:** The Alarms tab shows the next active alarm and offers **Pause all alarms** and **Resume alarms**.
+- **Quick alarms:** Hold the **+** button on the Alarms tab for **Alarm in…**. Hold an alarm card to select it for duplication or deletion. Tap an alarm to find skipping and locking in its editor.
+- **Next alarm:** The Morning tab shows the next active alarm and offers **Pause all alarms** and **Resume alarms**.
+- **Wake-up missions:** In Edit Alarm, expand **Wake-up missions** to choose a difficulty, add or reorder challenges, or try one. **Wake-up options** includes snooze, sound, pre-ring lock, and still-awake checks.
 - **Timers:** Create and manage countdown timers.
 - **Stopwatch:** Track elapsed time.
 - **Analog clock widget:** A configurable home-screen clock widget.

@@ -62,7 +62,19 @@ object AlarmScheduler {
             // Degraded but not silent: a window alarm still rings, just not to the second.
             am.setWindow(AlarmManager.RTC_WAKEUP, at, 60_000L, fire)
         }
-        if (RuntimeAlarms.unlocked(context)) UpcomingAlarm.schedule(context, alarm, at)
+        if (!alarm.isWakeCheckRetry && RuntimeAlarms.unlocked(context)) UpcomingAlarm.schedule(context, alarm, at)
+    }
+
+    fun recoverRinging(context: Context, alarm: Alarm) {
+        val at = alarm.ringingAt ?: return
+        val manager = context.getSystemService<AlarmManager>() ?: return
+        val pending = PendingIntent.getBroadcast(context, alarm.id.toInt(),
+            Intent(context, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_RESUME_RING)
+                .putExtra(AlarmReceiver.EXTRA_ID, alarm.id).putExtra(UpcomingAlarm.AT, at),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val soon = System.currentTimeMillis() + 1500L
+        if (canScheduleExact(context)) manager.setAlarmClock(AlarmManager.AlarmClockInfo(soon, showPendingIntent(context)), pending)
+        else manager.setWindow(AlarmManager.RTC_WAKEUP, soon, 60_000L, pending)
     }
 
     fun scheduleAll(context: Context, alarms: List<Alarm>) {

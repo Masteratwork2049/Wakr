@@ -5,12 +5,26 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.text.format.DateFormat
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.lifecycleScope
+import com.wakr.app.core.Alarm
+import com.wakr.app.core.canSnooze
+import com.wakr.app.core.ringMissions
+import com.wakr.app.ui.missions.MissionChallenge
+import com.wakr.app.ui.missions.title
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,10 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.map
 import com.wakr.app.data.ClockSettings
 import com.wakr.app.data.ClockStore
 import com.wakr.app.ui.rememberWallTicker
@@ -77,33 +88,96 @@ class AlarmRingActivity : ComponentActivity() {
 
         val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
-        val beforeUnlock = !RuntimeAlarms.unlocked(this)
+        val at = intent.getLongExtra(UpcomingAlarm.AT, -1L)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = Unit
         })
 
         setContent {
-            val settingsFlow = androidx.compose.runtime.remember { if (beforeUnlock) kotlinx.coroutines.flow.flowOf<ClockSettings?>(ClockSettings()) else ClockStore(applicationContext).settings.map { it as ClockSettings? } }
-            val loadedSettings by settingsFlow.collectAsStateWithLifecycle(initialValue = null)
-            val settings = loadedSettings ?: return@setContent
+            val settings by produceState(ClockSettings()) {
+                while (!RuntimeAlarms.unlocked(applicationContext)) delay(350)
+                ClockStore(applicationContext).settings.collect { value = it }
+            }
             ClockTheme(settings.theme) {
+                val alarm by produceState<Alarm?>(null, id, at) {
+                    while (true) {
+                        val found = RuntimeAlarms.read(applicationContext).firstOrNull { it.id == id && it.ringingAt == at }
+                        value = found
+                        if (found == null) {
+                            finish()
+                            break
+                        }
+                        delay(350)
+                    }
+                }
+                val current = alarm ?: return@ClockTheme
+                val mission = current.ringMissions.getOrNull(current.missionIndex)
+                val awaitingUnlock = mission == null && current.missionIndex < current.privateMissionCount
+                val completing = remember(id, at) { mutableStateOf(false) }
+                val closeRing = { actionName: String ->
+                    if (!completing.value) {
+                        completing.value = true
+                        sendBroadcast(action(actionName, id))
+                    }
+                }
+                LaunchedEffect(current.wake.voiceAnnounceEnabled) {
+                    if (current.wake.voiceAnnounceEnabled) {
+                        val attrs = window.attributes
+                        val levels = listOf(.22f, .36f, .55f, .75f, 1f)
+                        for (level in levels) {
+                            attrs.screenBrightness = level
+                            window.attributes = attrs
+                            delay(4000)
+                        }
+                    }
+                }
                 Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
-                    Ringing(
-                        label = label,
-                        snoozeMinutes = settings.alarms.snoozeMinutes,
-                        onSnooze = {
-                            sendBroadcast(action(ClockActionReceiver.ACTION_SNOOZE, id))
-                            finish()
-                        },
-                        onDismiss = {
-                            sendBroadcast(action(ClockActionReceiver.ACTION_DISMISS, id))
-                            finish()
-                        },
-                    )
+                    val snooze = if (current.canSnooze()) ({ closeRing(ClockActionReceiver.ACTION_SNOOZE) }) else null
+                    if (mission != null || awaitingUnlock) {
+                        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(current.label.ifBlank { label.ifBlank { "Alarm" } }, style = MaterialTheme.typography.headlineMedium)
+                            if (mission == null) {
+                                Text("Unlock the phone to continue your wake-up mission.")
+                                androidx.compose.material3.FilledTonalButton(onClick = {
+                                    getSystemService(android.app.KeyguardManager::class.java).requestDismissKeyguard(this@AlarmRingActivity, null)
+                                }) { Text("Unlock phone") }
+                            } else {
+                                Text("Mission ${current.missionIndex + 1} of ${current.ringMissions.size} · ${mission.type.title}")
+                                MissionChallenge(mission, (current.firstRingAt ?: at) xor mission.id, allowScannerFallback = true) {
+                                    lifecycleScope.launch {
+                                        val updated = RuntimeAlarms.update(applicationContext) { alarms -> alarms.map { candidate ->
+                                            if (candidate.id == id && candidate.ringingAt == at && candidate.missionIndex == current.missionIndex) {
+                                                candidate.copy(missionIndex = candidate.missionIndex + 1)
+                                            } else candidate
+                                        } }
+                                        updated.firstOrNull { it.id == id && it.ringingAt == at }?.let {
+                                            RuntimeAlarms.mirror(applicationContext, it)
+                                            AlarmService.refreshRing(id, at)
+                                        }
+                                    }
+                                }
+                            }
+                            if (snooze != null) androidx.compose.material3.OutlinedButton(onClick = snooze) {
+                                Text("Snooze ${current.wake.snoozeDurationMin ?: settings.alarms.snoozeMinutes} min")
+                            }
+                        }
+                    } else {
+                        Ringing(label = current.label.ifBlank { label }, snoozeMinutes = current.wake.snoozeDurationMin ?: settings.alarms.snoozeMinutes,
+                            onSnooze = snooze, onDismiss = { closeRing(ClockActionReceiver.ACTION_DISMISS) })
+                    }
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (isFinishing || isChangingConfigurations) return
+        val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1)
+        val at = intent.getLongExtra(UpcomingAlarm.AT, -1)
+        AlarmService.refreshRing(id, at, leaving = true)
     }
 
     private fun action(name: String, id: Long) =
@@ -135,12 +209,11 @@ class AlarmRingActivity : ComponentActivity() {
 private fun Ringing(
     label: String,
     snoozeMinutes: Int,
-    onSnooze: () -> Unit,
+    onSnooze: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    val now by rememberWallTicker()
-    val time = LocalTime.now()
-    val context = LocalContext.current
+    val now by rememberWallTicker(60_000L)
+    val time = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
 
     val formattedTime = if (is24Hour) {
@@ -178,14 +251,16 @@ private fun Ringing(
             height = 96.dp,
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(12.dp))
-        WidePill(
-            text = "Snooze $snoozeMinutes min",
-            onClick = onSnooze,
-            outlined = true,
-            content = MaterialTheme.colorScheme.onSurface,
-            height = 72.dp,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (onSnooze != null) {
+            Spacer(Modifier.height(12.dp))
+            WidePill(
+                text = "Snooze $snoozeMinutes min",
+                onClick = onSnooze,
+                outlined = true,
+                content = MaterialTheme.colorScheme.onSurface,
+                height = 72.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

@@ -1,6 +1,15 @@
 package com.wakr.app.ui
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 import com.wakr.app.core.asDuplicate
+import com.wakr.app.core.missionsRemaining
+import com.wakr.app.core.AlarmMission
+import com.wakr.app.core.MissionDifficulty
+import com.wakr.app.core.MissionType
+import com.wakr.app.ui.missions.MissionChallenge
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
@@ -177,8 +186,43 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
 
         var editing by remember { mutableStateOf<Alarm?>(null) }
         var lockedAlarm by remember { mutableStateOf<Alarm?>(null) }
-        fun requestEdit(alarm: Alarm) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var protectedAction by remember { mutableStateOf<Pair<List<Alarm>, () -> Unit>?>(null) }
+        fun guardAlarmChanges(ids: Set<Long>, action: () -> Unit) {
+            val alarms = vm.alarms.value.filter { it.id in ids }
+            val running = alarms.firstOrNull { it.ringingAt != null && it.missionsRemaining }
+            if (running != null) {
+                runCatching { com.wakr.app.alarm.AlarmRingActivity.intent(context, running.id, running.label, running.ringingAt!!).send() }
+                return
+            }
+            val protected = alarms.filter(vm::needsPreRingChallenge)
+            if (protected.isEmpty()) action() else protectedAction = protected to action
+        }
+        fun requestEdit(alarm: Alarm) = guardAlarmChanges(setOf(alarm.id)) {
             if (alarm.wake.isLocked) lockedAlarm = alarm else editing = alarm
+        }
+        protectedAction?.let { (alarms, action) ->
+            val seed = remember(alarms) { System.nanoTime() }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { protectedAction = null },
+                title = { Text("Alarm protection") },
+                text = {
+                    androidx.compose.foundation.layout.Column(
+                        Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(if (alarms.size == 1) "Solve this problem to change the upcoming alarm."
+                            else "Solve this problem to change ${alarms.size} protected alarms.")
+                        val difficulty = if (alarms.any { it.wake.lockBeforeRingMin >= 60 }) MissionDifficulty.MEDIUM else MissionDifficulty.EASY
+                        MissionChallenge(AlarmMission(-1, MissionType.MATH, difficulty), seed) {
+                            protectedAction = null
+                            vm.authorizePreRingChanges(alarms)
+                            action()
+                        }
+                    }
+                },
+                confirmButton = { androidx.compose.material3.TextButton(onClick = { protectedAction = null }) { Text("Cancel") } },
+            )
         }
         lockedAlarm?.let { alarm ->
             UnlockAlarmDialog(alarm.label, onDismiss = { lockedAlarm = null }) {
@@ -242,7 +286,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
             }
         }
         val snackbar = remember { SnackbarHostState() }
-        fun saveWithConfirmation(draft: Alarm) {
+        fun saveWithConfirmation(draft: Alarm) = guardAlarmChanges(setOf(draft.id)) {
             vm.saveAlarm(draft) { saved ->
                 val now = java.time.ZonedDateTime.now()
                 saved.nextFire(now)?.let { next ->
@@ -419,10 +463,10 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                     duplicateSignal = duplicateSignal,
                                     onDuplicate = { selection -> selection.forEach { vm.saveAlarm(it.asDuplicate()) } },
                                     onToggle = { id -> alarms.find { it.id == id }?.let {
-                                        if (it.wake.isLocked) requestEdit(it) else vm.toggleAlarm(id)
+                                        if (it.wake.isLocked) requestEdit(it) else guardAlarmChanges(setOf(id)) { vm.toggleAlarm(id) }
                                     } }, onEdit = ::requestEdit,
                                     onAddAlarm = { showNewAlarmPicker = true },
-                                    onDeleteAlarms = { vm.deleteAlarms(it) },
+                                    onDeleteAlarms = { ids -> guardAlarmChanges(ids) { vm.deleteAlarms(ids) } },
                                     onSelectionCountChange = { alarmSelectionCount = it },
                                     clearSelectionSignal = clearSelectionSignal, deleteClickSignal = deleteClickSignal,
                                     editingAlarm = editing, widePane = single,
@@ -444,8 +488,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                         order = settings.alarms.weekStart.order(com.wakr.app.ui.sheets.systemFirstDay()),
                                         onSave = { saveWithConfirmation(it); editing = null; showNewAlarmPicker = false },
                                         onCancel = { editing = null; showNewAlarmPicker = false },
-                                        onDelete = { vm.deleteAlarms(setOf(it)); editing = null; showNewAlarmPicker = false },
-                                        onSkip = { vm.skipNext(it); editing = null })
+                                        onDelete = { id -> guardAlarmChanges(setOf(id)) { vm.deleteAlarm(id) }; editing = null; showNewAlarmPicker = false },
+                                        onSkip = { id -> guardAlarmChanges(setOf(id)) { vm.skipNext(id) }; editing = null })
                                 },
                                 modifier = Modifier.padding(body))
                         } else {
@@ -497,7 +541,10 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                         val history by vm.wakeHistory.collectAsStateWithLifecycle(initialValue = emptyList())
                         MorningScreen(alarms, history, body, settings.alarms.cards24Hour,
                             selected = pagerState.settledPage == Tab.MORNING.ordinal,
-                            onPauseAll = { vm.pauseOrResumeAll() },
+                            onPauseAll = {
+                                val ids = if (alarms.any { it.pausedByGroup }) emptySet() else alarms.filter { it.enabled }.map { it.id }.toSet()
+                                guardAlarmChanges(ids) { vm.pauseOrResumeAll() }
+                            },
                             onAdd = { showNewAlarmPicker = true },
                             onEdit = { alarm ->
                                 if (wideClockPages) tab = Tab.ALARMS
@@ -590,8 +637,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                     weekStart = settings.alarms.weekStart,
                     onDismiss = { editing = null },
                     onSave = { saveWithConfirmation(it); editing = null },
-                    onDelete = if (draft.id == 0L) null else ({ id -> vm.deleteAlarm(id) }),
-                    onSkip = if (draft.id == 0L) null else ({ id -> vm.skipNext(id); editing = null }),
+                    onDelete = if (draft.id == 0L) null else ({ id -> guardAlarmChanges(setOf(id)) { vm.deleteAlarm(id) } }),
+                    onSkip = if (draft.id == 0L) null else ({ id -> guardAlarmChanges(setOf(id)) { vm.skipNext(id) }; editing = null }),
                 )
             }
         }

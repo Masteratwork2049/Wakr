@@ -353,6 +353,12 @@ internal fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
                 .put("missions", jsonArray(a.missions, AlarmMission::toJson))
                 .put("createdAt", a.createdAt)
                 .put("groupPaused", a.pausedByGroup).put("ringingAt", a.ringingAt).put("missedRetries", a.missedRetries)
+                .put("snoozeCount", a.snoozeCount)
+                .put("missionIndex", a.missionIndex)
+                .put("rebootCount", a.rebootCount)
+                .put("firstRingAt", a.firstRingAt)
+                .put("privateMissionCount", a.privateMissionCount)
+                .put("isWakeCheckRetry", a.isWakeCheckRetry)
                 .put("time", a.time.toSecondOfDay())
                 .put("label", a.label)
                 .put("days", JSONArray(a.days.map { it.value }))
@@ -376,6 +382,9 @@ internal fun parseAlarms(s: String): List<Alarm> = runCatching {
             createdAt = o.longOrNull("createdAt"),
             pausedByGroup = o.optBoolean("groupPaused"), ringingAt = o.longOrNull("ringingAt"),
             missedRetries = o.optInt("missedRetries"),
+            snoozeCount = o.optInt("snoozeCount"), missionIndex = o.optInt("missionIndex"),
+            rebootCount = o.optInt("rebootCount"), firstRingAt = o.longOrNull("firstRingAt"),
+            privateMissionCount = o.optInt("privateMissionCount"), isWakeCheckRetry = o.optBoolean("isWakeCheckRetry"),
             time = LocalTime.ofSecondOfDay(o.getLong("time")),
             label = o.optString("label", ""),
             days = (0 until days.length()).map { DayOfWeek.of(days.getInt(it)) }.toSet(),

@@ -41,6 +41,7 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("fadeInSeconds", fadeInSeconds)
     .put("vibrationPattern", vibrationPattern.name)
     .put("flashEnabled", flashEnabled)
+    .put("flashStrobeEnabled", flashStrobeEnabled)
     .put("voiceAnnounceEnabled", voiceAnnounceEnabled)
     .put("snoozeEnabled", snoozeEnabled)
     .put("snoozeDurationMin", snoozeDurationMin)
@@ -69,6 +70,7 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     fadeInSeconds = optInt("fadeInSeconds", 0),
     vibrationPattern = enum("vibrationPattern", VibrationPattern.DEFAULT),
     flashEnabled = optBoolean("flashEnabled", false),
+    flashStrobeEnabled = optBoolean("flashStrobeEnabled", false),
     voiceAnnounceEnabled = optBoolean("voiceAnnounceEnabled", false),
     snoozeEnabled = optBoolean("snoozeEnabled", true),
     snoozeDurationMin = intOrNull("snoozeDurationMin"),
