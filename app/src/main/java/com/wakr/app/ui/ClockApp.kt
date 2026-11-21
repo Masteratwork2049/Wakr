@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -170,6 +171,21 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         }
 
         var editing by remember { mutableStateOf<Alarm?>(null) }
+        var lockedAlarm by remember { mutableStateOf<Alarm?>(null) }
+        fun requestEdit(alarm: Alarm) {
+            if (alarm.wake.isLocked) lockedAlarm = alarm else editing = alarm
+        }
+        lockedAlarm?.let { alarm ->
+            androidx.compose.material3.AlertDialog(onDismissRequest = { lockedAlarm = null },
+                title = { Text("Unlock alarm?") }, text = { Text(alarm.label.ifBlank { "Unlock to make changes." }) },
+                confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                    vm.setAlarmLock(alarm.id, false)
+                    editing = alarm.copy(wake = alarm.wake.copy(isLocked = false))
+                    lockedAlarm = null
+                }) { Text("Unlock") } },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { lockedAlarm = null }) { Text("Cancel") } })
+        }
+        var relativePicker by remember { mutableStateOf(false) }
         var showNewAlarmPicker by remember { mutableStateOf(false) }
         var showAddCitySheet by rememberSaveable { mutableStateOf(false) }
         var selectedWorldCityZoneId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -383,7 +399,12 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                 AlarmsScreen(alarms = alarms, weekStart = settings.alarms.weekStart,
                                     staggerEntranceToken = isPostOnboardingStaggerToken,
                                     onStaggerConsumed = { isPostOnboardingStaggerToken = 0 },
-                                    onToggle = vm::toggleAlarm, onEdit = { editing = it },
+                                    onPauseAll = { vm.pauseOrResumeAll() },
+                                    onDuplicate = { saveWithConfirmation(it.copy(id = 0, enabled = true, pausedByGroup = false)) },
+                                    onSkip = { vm.skipNext(it) }, onLock = { vm.setAlarmLock(it.id, true) },
+                                    onToggle = { id -> alarms.find { it.id == id }?.let {
+                                        if (it.wake.isLocked) requestEdit(it) else vm.toggleAlarm(id)
+                                    } }, onEdit = ::requestEdit,
                                     onAddAlarm = { showNewAlarmPicker = true },
                                     onDeleteAlarms = { vm.deleteAlarms(it) },
                                     onSelectionCountChange = { alarmSelectionCount = it },
@@ -462,7 +483,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                             onAdd = { showNewAlarmPicker = true },
                             onEdit = { alarm ->
                                 if (wideClockPages) tab = Tab.ALARMS
-                                editing = alarm
+                                requestEdit(alarm)
                             })
                     }
 
@@ -506,6 +527,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                 },
                 // Timer and Stopwatch retain their existing in-content actions.
                 showAdd = dockTab == Tab.ALARMS || dockTab == Tab.WORLD,
+                onAddLongPress = if (dockTab == Tab.ALARMS) ({ relativePicker = true; showNewAlarmPicker = true }) else null,
                 addLabel = if (dockTab == Tab.WORLD) "Add Location" else "Add alarm",
                 onAdd = { if (dockTab == Tab.WORLD) showAddCitySheet = true else showNewAlarmPicker = true },
                 modifier = Modifier
@@ -557,10 +579,11 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
 
         if (showNewAlarmPicker) {
             NewAlarmPickerSheet(
+                relative = relativePicker,
                 initial = vm.blankAlarm(),
                 weekStart = settings.alarms.weekStart,
-                onDismiss = { showNewAlarmPicker = false },
-                onSave = { alarm -> saveWithConfirmation(alarm); showNewAlarmPicker = false },
+                onDismiss = { showNewAlarmPicker = false; relativePicker = false },
+                onSave = { alarm -> saveWithConfirmation(alarm); showNewAlarmPicker = false; relativePicker = false },
             )
         }
 

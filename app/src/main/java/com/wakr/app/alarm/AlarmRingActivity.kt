@@ -54,6 +54,12 @@ import java.time.LocalTime
  */
 class AlarmRingActivity : ComponentActivity() {
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recreate()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -71,14 +77,14 @@ class AlarmRingActivity : ComponentActivity() {
 
         val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
-        val store = ClockStore(applicationContext)
+        val beforeUnlock = !RuntimeAlarms.unlocked(this)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = Unit
         })
 
         setContent {
-            val settingsFlow = androidx.compose.runtime.remember(store) { store.settings.map { it as ClockSettings? } }
+            val settingsFlow = androidx.compose.runtime.remember { if (beforeUnlock) kotlinx.coroutines.flow.flowOf<ClockSettings?>(ClockSettings()) else ClockStore(applicationContext).settings.map { it as ClockSettings? } }
             val loadedSettings by settingsFlow.collectAsStateWithLifecycle(initialValue = null)
             val settings = loadedSettings ?: return@setContent
             ClockTheme(settings.theme) {
@@ -104,16 +110,19 @@ class AlarmRingActivity : ComponentActivity() {
         Intent(this, ClockActionReceiver::class.java)
             .setPackage(packageName)
             .setAction(name)
+            .putExtra(UpcomingAlarm.AT, intent.getLongExtra(UpcomingAlarm.AT, -1))
             .putExtra(AlarmReceiver.EXTRA_ID, id)
 
     companion object {
         const val EXTRA_LABEL = "label"
 
-        fun intent(context: Context, id: Long, label: String): PendingIntent =
+        fun intent(context: Context, id: Long, label: String, at: Long): PendingIntent =
             PendingIntent.getActivity(
                 context,
                 id.toInt(),
                 Intent(context, AlarmRingActivity::class.java)
+                    .setData(android.net.Uri.parse("wakr://ring/$id/$at"))
+                    .putExtra(UpcomingAlarm.AT, at)
                     .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     .putExtra(AlarmReceiver.EXTRA_ID, id)
                     .putExtra(EXTRA_LABEL, label),

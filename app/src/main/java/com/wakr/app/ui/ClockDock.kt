@@ -61,6 +61,7 @@ fun ClockDock(
     showAdd: Boolean,
     addLabel: String,
     onAdd: () -> Unit,
+    onAddLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     enableGlow: Boolean = true,
     pagePosition: (() -> Float)? = null,
@@ -176,6 +177,7 @@ fun ClockDock(
                         maxStretchPercent = 0.08f,
                         maxTranslateDp = 2.0.dp,
                         onClick = onAdd,
+                        onLongClick = onAddLongPress,
                     )
                     .clip(CircleShape)
                     .glass(

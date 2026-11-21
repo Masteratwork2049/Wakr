@@ -122,9 +122,13 @@ fun AlarmPickerSheetContent(
     onVibrateChange: (Boolean) -> Unit,
     onSoundClick: () -> Unit,
     onCancel: () -> Unit,
-    onSave: () -> Unit,
+    onSave: (Boolean) -> Unit,
+    wake: com.wakr.app.core.WakeOptions,
+    setWake: (com.wakr.app.core.WakeOptions) -> Unit,
+    setDays: (Set<DayOfWeek>) -> Unit,
     onDelete: () -> Unit,
     modal: Boolean = false,
+    initialRelative: Boolean = false,
 ) {
     val locale = LocalConfiguration.current.locales[0]
     val density = LocalDensity.current
@@ -175,7 +179,7 @@ fun AlarmPickerSheetContent(
             SheetHeaderButton(
                 text = "Save",
                 primary = true,
-                onClick = onSave,
+                onClick = { onSave(false) },
                 icon = Icons.Rounded.Check,
             )
         }
@@ -272,6 +276,9 @@ fun AlarmPickerSheetContent(
         )
 
 
+        AlarmSchedulingOptions(wake, days.isEmpty(), showDelete, hour, minute, initialRelative,
+            setTime = { onHourChange(it.hour); onMinuteChange(it.minute); onPmChange(it.hour >= 12) },
+            setWake = setWake, setDays = setDays, duplicate = { onSave(true) })
         if (showDelete) {
             Spacer(Modifier.height(8.dp))
             DeleteAlarmCard(onDelete = onDelete)
@@ -293,7 +300,7 @@ private object AlarmNameBringIntoViewSpec : BringIntoViewSpec {
 }
 
 @Composable
-private fun AlarmWheel(
+internal fun AlarmWheel(
     modifier: Modifier,
     values: List<Int>,
     selected: Int,

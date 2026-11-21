@@ -38,15 +38,14 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private suspend fun fire(context: Context, id: Long, at: Long) {
-        val store = ClockStore(context)
         if (at > System.currentTimeMillis() + 1000) return
         var firing: com.wakr.app.core.Alarm? = null
-        val cleared = store.updateAlarms { list -> list.map { alarm ->
+        val cleared = RuntimeAlarms.update(context) { list -> list.map { alarm ->
             if (alarm.id != id || !alarm.enabled || (at > 0 && !UpcomingAlarm.matches(alarm, at))) alarm
             else {
                 firing = alarm
-                alarm.copy(enabled = !alarm.isOneShot, snoozedUntilMillis = null, skippedOccurrenceMillis = at.takeIf { it > 0 } ?: alarm.skippedOccurrenceMillis,
-                    skippedOccurrenceDate = if (at > 0) java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                alarm.copy(ringingAt = at, missedRetries = if (alarm.snoozedUntilMillis == at) alarm.missedRetries else 0, enabled = !alarm.isOneShot, snoozedUntilMillis = null, skippedOccurrenceMillis = at.takeIf { it > 0 } ?: alarm.skippedOccurrenceMillis,
+                    skippedOccurrenceDate = if (at > 0) java.time.Instant.ofEpochMilli(at).atZone(alarm.scheduleZone(java.time.ZoneId.systemDefault())).toLocalDate()
                         else java.time.LocalDate.now())
             }
         } }

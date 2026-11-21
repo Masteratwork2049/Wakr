@@ -23,9 +23,6 @@ import kotlinx.coroutines.launch
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        // Preferences are credential-protected. Do not crash during locked boot;
-        // BOOT_COMPLETED reschedules once the user unlocks that storage.
-        if (context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked == false) return
         val app = context.applicationContext
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
@@ -38,9 +35,12 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private suspend fun reschedule(context: Context) {
-        val store = ClockStore(context)
+        val alarms = RuntimeAlarms.read(context)
         Notifications.ensureChannels(context)
-        AlarmScheduler.scheduleAll(context, store.alarmsNow())
+        AlarmScheduler.scheduleAll(context, alarms)
+        if (!RuntimeAlarms.unlocked(context)) return
+        kotlinx.coroutines.withContext(Dispatchers.Main.immediate) { com.wakr.app.overlay.OverlayManager.init(context) }
+        val store = ClockStore(context)
         // A reboot resets elapsedRealtime, so any stored deadline is meaningless. Rebuild the
         // timer's notification from what survived and let the store's own clamp decide.
         store.timerNow()?.let { TimerScheduler.sync(context, it) }

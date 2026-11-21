@@ -97,7 +97,7 @@ private enum class AboutPage(val title: String, val body: List<String>) {
                 "system, not by the app's good behaviour, and you can check it yourself: the full " +
                 "permission list is on the Permissions page and in the app's entry in Settings.",
             "Your alarms, timers, world clocks and preferences live in one file in the app's own " +
-                "private storage. Nothing else on the device can read it. Uninstalling the app " +
+                "private storage. A separate device-protected copy of alarm timing and ringer settings lets alarms ring before first unlock. Uninstalling the app " +
                 "deletes it.",
             "Android cloud backup excludes clock preferences and wake history. Android 12 and " +
                 "later can copy them directly to a new device during setup.",

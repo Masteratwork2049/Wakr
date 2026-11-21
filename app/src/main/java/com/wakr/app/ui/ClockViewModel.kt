@@ -126,7 +126,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         // on launch is cheap and covers both without a separate first-run flag.
         viewModelScope.launch {
             Notifications.ensureChannels(ctx)
-            AlarmScheduler.scheduleAll(ctx, store.alarmsNow())
+            AlarmScheduler.scheduleAll(ctx, com.wakr.app.alarm.RuntimeAlarms.read(ctx))
         }
     }
 
@@ -144,9 +144,32 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
 
     /* ── Alarms ─────────────────────────────────────────────────────────────────────────────── */
 
+    fun pauseOrResumeAll() = viewModelScope.launch {
+        val updated = store.updateAlarms { alarms ->
+            val pause = alarms.none { it.pausedByGroup }
+            alarms.map { it.copy(pausedByGroup = pause && it.enabled) }
+        }
+        AlarmScheduler.scheduleAll(ctx, updated)
+    }
+
+    fun setAlarmLock(id: Long, locked: Boolean) = viewModelScope.launch {
+        store.updateAlarms { list -> list.map { if (it.id == id) it.copy(wake = it.wake.copy(isLocked = locked)) else it } }
+    }
+
+    fun skipNext(id: Long) = viewModelScope.launch {
+        val now = java.time.ZonedDateTime.now()
+        val updated = store.updateAlarms { alarms -> alarms.map { alarm ->
+            val next = if (alarm.id == id && !alarm.wake.isLocked) alarm.nextFire(now) else null
+            if (next == null) alarm else alarm.copy(enabled = !alarm.isOneShot, snoozedUntilMillis = null,
+                skippedOccurrenceMillis = next.toInstant().toEpochMilli(),
+                skippedOccurrenceDate = next.withZoneSameInstant(alarm.scheduleZone(now.zone)).toLocalDate())
+        } }
+        updated.firstOrNull { it.id == id }?.let { AlarmScheduler.schedule(ctx, it) }
+    }
+
     fun toggleAlarm(id: Long) = viewModelScope.launch {
         val next = store.updateAlarms { list -> list.map {
-            if (it.id == id) it.copy(enabled = !it.enabled, snoozedUntilMillis = null, skippedOccurrenceMillis = null, skippedOccurrenceDate = null) else it
+            if (it.id == id && !it.wake.isLocked) it.copy(ringingAt = null, missedRetries = 0, pausedByGroup = false, enabled = !it.enabled, snoozedUntilMillis = null, skippedOccurrenceMillis = null, skippedOccurrenceDate = null) else it
         } }
         next.firstOrNull { it.id == id }?.let { a ->
             if (a.enabled) AlarmScheduler.schedule(ctx, a) else AlarmScheduler.cancel(ctx, id)

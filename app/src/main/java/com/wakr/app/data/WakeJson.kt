@@ -29,6 +29,7 @@ internal fun JSONObject.longOrNull(key: String) = opt(key)?.toString()?.toLongOr
 private fun JSONObject.intOrNull(key: String) = opt(key)?.toString()?.toIntOrNull()
 
 internal fun WakeOptions.toJson() = JSONObject()
+    .put("relativeTriggerMillis", relativeTriggerMillis)
     .put("scheduledDateEpochDay", scheduledDateEpochDay)
     .put("pausedUntilEpochDay", pausedUntilEpochDay)
     .put("timeZoneId", timeZoneId)
@@ -56,6 +57,7 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("stillAwakeDelayMin", stillAwakeDelayMin)
 
 internal fun JSONObject.toWakeOptions() = WakeOptions(
+    relativeTriggerMillis = longOrNull("relativeTriggerMillis"),
     scheduledDateEpochDay = longOrNull("scheduledDateEpochDay"),
     pausedUntilEpochDay = longOrNull("pausedUntilEpochDay"),
     timeZoneId = optString("timeZoneId").takeIf { !isNull("timeZoneId") && it.isNotEmpty() },

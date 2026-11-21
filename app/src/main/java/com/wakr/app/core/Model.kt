@@ -40,24 +40,48 @@ data class Alarm(
     val missions: List<AlarmMission> = emptyList(),
     /** Vanilla alarms predate this field and have no known creation time. */
     val createdAt: Long? = null,
+    val pausedByGroup: Boolean = false,
+    val ringingAt: Long? = null,
+    val missedRetries: Int = 0,
 ) {
     val isOneShot: Boolean get() = days.isEmpty()
 
     /** The next instant this alarm would sound, or null when it is off. */
     fun nextFire(now: ZonedDateTime): ZonedDateTime? {
-        if (!enabled) return null
-        snoozedUntilMillis?.let { at ->
-            val snooze = java.time.Instant.ofEpochMilli(at).atZone(now.zone)
-            if (snooze.isAfter(now)) return snooze
+        if (!enabled || pausedByGroup) return null
+        val zone = scheduleZone(now.zone)
+        val local = now.withZoneSameInstant(zone)
+        val today = local.toLocalDate()
+        val resume = wake.pausedUntilEpochDay?.let(LocalDate::ofEpochDay)
+        snoozedUntilMillis?.let {
+            val pending = java.time.Instant.ofEpochMilli(it).atZone(zone)
+            if (pending.isAfter(now) && (resume == null || pending.toLocalDate() >= resume))
+                return pending.withZoneSameInstant(now.zone)
         }
-        val todayAt = now.with(time).withSecond(0).withNano(0)
-        if (isOneShot) return (if (todayAt.isAfter(now)) todayAt else todayAt.plusDays(1))
-            .takeUnless { it.toInstant().toEpochMilli() == skippedOccurrenceMillis || it.toLocalDate() == skippedOccurrenceDate }
-        // Seven candidates is enough: a repeating alarm always has one inside a week.
-        return (0..7).asSequence()
-            .map { todayAt.plusDays(it.toLong()) }
-            .firstOrNull { it.isAfter(now) && it.dayOfWeek in days && it.toInstant().toEpochMilli() != skippedOccurrenceMillis && it.toLocalDate() != skippedOccurrenceDate }
+        if (isOneShot && wake.relativeTriggerMillis != null) {
+            val at = java.time.Instant.ofEpochMilli(wake.relativeTriggerMillis).atZone(now.zone)
+            return at.takeIf { it.isAfter(now) && skippedOccurrenceMillis != wake.relativeTriggerMillis }
+        }
+        val start = maxOf(today, resume ?: today)
+        val fixed = wake.scheduledDateEpochDay?.takeIf { isOneShot }?.let(LocalDate::ofEpochDay)
+        val dates = when {
+            fixed != null -> sequenceOf(fixed)
+            isOneShot -> {
+                val first = start.atTime(time).atZone(zone)
+                sequenceOf(if (first.isAfter(now)) start else start.plusDays(1))
+            }
+            else -> (0L..14L).asSequence().map(start::plusDays).filter { it.dayOfWeek in days }
+        }
+        return dates.filter { it >= start && it != skippedOccurrenceDate }
+            .map { it.atTime(time.withSecond(0).withNano(0)).atZone(zone) }
+            .firstOrNull { it.isAfter(now) && it.toInstant().toEpochMilli() != skippedOccurrenceMillis }
+            ?.withZoneSameInstant(now.zone)
     }
+
+    fun scheduleZone(device: ZoneId): ZoneId =
+        wake.timeZoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: device
+
+    val temporary: Boolean get() = isOneShot && wake.deleteAfterDismiss
 
     /** The words the app prints: "Every day" / "Weekdays" / "Mon, Wed, Fri" / "Tomorrow". */
     fun repeatLabel(now: LocalDate = LocalDate.now()): String = when {

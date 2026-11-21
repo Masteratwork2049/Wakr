@@ -171,11 +171,12 @@ object Notifications {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun broadcast(context: Context, action: String, requestCode: Int, id: Long = 0L): PendingIntent =
+    fun broadcast(context: Context, action: String, requestCode: Int, id: Long = 0L, at: Long? = null): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             requestCode,
             Intent(context, ClockActionReceiver::class.java).setAction(action)
+                .apply { if (at != null) { data = android.net.Uri.parse("wakr://ring/$id/$at"); putExtra(UpcomingAlarm.AT, at) } }
                 .putExtra(AlarmReceiver.EXTRA_ID, id),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

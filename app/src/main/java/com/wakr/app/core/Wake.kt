@@ -22,6 +22,7 @@ data class AlarmMission(
 
 /** Null duration overrides inherit the live app settings, including on upgraded alarms. */
 data class WakeOptions(
+    val relativeTriggerMillis: Long? = null,
     val scheduledDateEpochDay: Long? = null,
     val pausedUntilEpochDay: Long? = null,
     val timeZoneId: String? = null,

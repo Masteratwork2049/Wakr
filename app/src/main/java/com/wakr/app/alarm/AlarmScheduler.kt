@@ -44,9 +44,11 @@ object AlarmScheduler {
 
     fun schedule(context: Context, alarm: Alarm, zone: ZoneId = ZoneId.systemDefault()) {
         val am = context.getSystemService<AlarmManager>() ?: return
+        RuntimeAlarms.mirror(context, alarm)
         val next = alarm.nextFire(ZonedDateTime.now(zone))
         if (next == null) {
-            cancel(context, alarm.id)
+            am.cancel(firePendingIntent(context, alarm.id))
+            UpcomingAlarm.cancel(context, alarm.id)
             return
         }
         val at = next.toInstant().toEpochMilli()
@@ -60,7 +62,7 @@ object AlarmScheduler {
             // Degraded but not silent: a window alarm still rings, just not to the second.
             am.setWindow(AlarmManager.RTC_WAKEUP, at, 60_000L, fire)
         }
-        UpcomingAlarm.schedule(context, alarm, at)
+        if (RuntimeAlarms.unlocked(context)) UpcomingAlarm.schedule(context, alarm, at)
     }
 
     fun scheduleAll(context: Context, alarms: List<Alarm>) {
@@ -68,6 +70,7 @@ object AlarmScheduler {
     }
 
     fun cancel(context: Context, id: Long) {
+        RuntimeAlarms.forget(context, id)
         val am = context.getSystemService<AlarmManager>() ?: return
         am.cancel(firePendingIntent(context, id))
         UpcomingAlarm.cancel(context, id)

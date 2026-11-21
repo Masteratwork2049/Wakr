@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.SystemClock
 import com.wakr.app.core.withAddedSeconds
 import com.wakr.app.core.ClockTimer
+import com.wakr.app.core.finishOccurrence
 import com.wakr.app.core.Lap
 import com.wakr.app.core.Stopwatch
 import com.wakr.app.core.TimerState
@@ -31,11 +32,10 @@ class ClockActionReceiver : BroadcastReceiver() {
         val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
-            val store = ClockStore(app)
+            val store by lazy { ClockStore(app) }
             try {
                 when (intent.action) {
-                    ACTION_SNOOZE -> snooze(app, store, id)
-                    ACTION_DISMISS -> AlarmService.stop(app)
+                    ACTION_SNOOZE, ACTION_DISMISS -> finishRing(app, id, intent.getLongExtra(UpcomingAlarm.AT, -1), intent.action == ACTION_SNOOZE)
                     ACTION_TIMER_TOGGLE -> timerToggle(app, store)
                     ACTION_TIMER_ADD -> timerAdd(app, store)
                     ACTION_TIMER_CANCEL -> {
@@ -56,16 +56,18 @@ class ClockActionReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun snooze(context: Context, store: ClockStore, id: Long) {
-        AlarmService.stop(context)
-        val minutes = store.settingsNow().alarms.snoozeMinutes
-        val due = System.currentTimeMillis() + minutes * 60_000L
-        val updated = store.updateAlarms { list -> list.map {
-            // Re-arming matters for a one-shot: firing disabled it, and a snooze has to bring it
-            // back or the second ring never happens.
-            if (it.id == id) it.copy(snoozedUntilMillis = due, enabled = true) else it
+    private suspend fun finishRing(context: Context, id: Long, at: Long, snooze: Boolean) {
+        val due = System.currentTimeMillis() + RuntimeAlarms.settings(context).alarms.snoozeMinutes * 60_000L
+        var handled = false
+        val updated = RuntimeAlarms.update(context) { alarms -> alarms.mapNotNull { alarm ->
+            val result = alarm.finishOccurrence(id, at, due.takeIf { snooze })
+            if (result !== alarm) handled = true
+            result
         } }
-        updated.firstOrNull { it.id == id }?.let { AlarmScheduler.schedule(context, it) }
+        AlarmService.stopOccurrence(id, at)
+        if (!handled) return
+        val retained = updated.firstOrNull { it.id == id }
+        if (retained == null) AlarmScheduler.cancel(context, id) else AlarmScheduler.schedule(context, retained)
     }
 
     private suspend fun timerToggle(context: Context, store: ClockStore) {

@@ -103,7 +103,7 @@
           manifest attributes alone do not turn a dark display on.
         -->
         <activity
-            android:name=".alarm.AlarmRingActivity"
+            android:name=".alarm.AlarmRingActivity" android:directBootAware="true"
             android:exported="false"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"
@@ -113,7 +113,7 @@
             android:theme="@style/Theme.MaterialClock.App" />
 
         <service
-            android:name=".alarm.AlarmService"
+            android:name=".alarm.AlarmService" android:directBootAware="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
@@ -148,10 +148,10 @@
         </receiver>
 
         <receiver
-            android:name=".alarm.AlarmReceiver"
+            android:name=".alarm.AlarmReceiver" android:directBootAware="true"
             android:exported="false" />
 
-        <receiver android:name=".alarm.ClockActionReceiver" android:exported="false" />
+        <receiver android:name=".alarm.ClockActionReceiver" android:directBootAware="true" android:exported="false" />
 
         <!--
           The clock widget. exported="false" is correct: every one of these broadcasts comes from

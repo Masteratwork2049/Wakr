@@ -21,6 +21,7 @@ import java.time.LocalTime
 @Composable
 fun NewAlarmPickerSheet(
     initial: Alarm,
+    relative: Boolean = false,
     weekStart: WeekStart,
     onDismiss: () -> Unit,
     onSave: (Alarm) -> Unit,
@@ -50,6 +51,7 @@ fun NewAlarmPickerSheet(
     var vibrate by rememberSaveable { mutableStateOf(initial.vibrate) }
     var soundUri by rememberSaveable { mutableStateOf(initial.soundUri) }
 
+    var wake by androidx.compose.runtime.saveable.rememberSaveable(initial.id, stateSaver = com.wakr.app.ui.sheets.WakeDraftSaver) { mutableStateOf(initial.wake) }
     val openSoundSelector = rememberAlarmSoundSelector(soundUri) { soundUri = it }
 
     val soundLabel by androidx.compose.runtime.produceState(initialValue = "Default", key1 = soundUri, key2 = context) {
@@ -66,7 +68,8 @@ fun NewAlarmPickerSheet(
         containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
     ) {
         AlarmPickerSheetContent(
-            modal = true,
+            wake = wake, setWake = { wake = it }, setDays = { days = it },
+            modal = true, initialRelative = relative,
             title = "New Alarm",
             hour = hour,
             minute = minute,
@@ -90,9 +93,12 @@ fun NewAlarmPickerSheet(
             onCancel = {
                 closeThen(onDismiss)
             },
-            onSave = {
+            onSave = { duplicate ->
                 val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
                 val updated = initial.copy(
+                    id = if (duplicate) 0 else initial.id,
+                    wake = wake.forAlarmSave(days, LocalTime.of(saveHour, minute)),
+                    pausedByGroup = false,
                     time = LocalTime.of(saveHour, minute),
                     label = label.trim(),
                     days = days,

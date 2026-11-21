@@ -340,7 +340,7 @@ private inline fun <reified E : Enum<E>> enumOr(name: String?, fallback: E): E =
 
 /* ── JSON ───────────────────────────────────────────────────────────────────────────────────── */
 
-private fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
+internal fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
     list.forEach { a ->
         put(
             JSONObject()
@@ -348,6 +348,7 @@ private fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
                 .put("wake", a.wake.toJson())
                 .put("missions", jsonArray(a.missions, AlarmMission::toJson))
                 .put("createdAt", a.createdAt)
+                .put("groupPaused", a.pausedByGroup).put("ringingAt", a.ringingAt).put("missedRetries", a.missedRetries)
                 .put("time", a.time.toSecondOfDay())
                 .put("label", a.label)
                 .put("days", JSONArray(a.days.map { it.value }))
@@ -361,7 +362,7 @@ private fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
     }
 }.toString()
 
-private fun parseAlarms(s: String): List<Alarm> = runCatching {
+internal fun parseAlarms(s: String): List<Alarm> = runCatching {
     JSONArray(s).records { o ->
         val days = o.getJSONArray("days")
         Alarm(
@@ -369,6 +370,8 @@ private fun parseAlarms(s: String): List<Alarm> = runCatching {
             wake = o.optJSONObject("wake")?.toWakeOptions() ?: WakeOptions(),
             missions = o.optJSONArray("missions")?.records(JSONObject::toMission).orEmpty(),
             createdAt = o.longOrNull("createdAt"),
+            pausedByGroup = o.optBoolean("groupPaused"), ringingAt = o.longOrNull("ringingAt"),
+            missedRetries = o.optInt("missedRetries"),
             time = LocalTime.ofSecondOfDay(o.getLong("time")),
             label = o.optString("label", ""),
             days = (0 until days.length()).map { DayOfWeek.of(days.getInt(it)) }.toSet(),

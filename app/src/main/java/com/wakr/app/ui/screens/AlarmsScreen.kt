@@ -119,12 +119,15 @@ import kotlinx.coroutines.delay
 import com.wakr.app.ui.elasticClickable
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.wakr.app.core.Alarm
+import com.wakr.app.ui.sheets.forAlarmSave
 import com.wakr.app.core.WorldCity
 import com.wakr.app.ui.glass
 import com.wakr.app.ui.elasticClickable
@@ -229,6 +232,10 @@ fun AlarmsScreen(
     onEdit: (Alarm) -> Unit,
     contentPadding: PaddingValues,
     onAddAlarm: (() -> Unit)? = null,
+    onPauseAll: () -> Unit = {},
+    onDuplicate: (Alarm) -> Unit = {},
+    onSkip: (Long) -> Unit = {},
+    onLock: (Alarm) -> Unit = {},
     onDeleteAlarms: ((Set<Long>) -> Unit)? = null,
     onSelectionCountChange: ((Int) -> Unit)? = null,
     clearSelectionSignal: Int = 0,
@@ -268,6 +275,7 @@ fun AlarmsScreen(
     var displayedAlarms by remember { mutableStateOf(alarms) }
     var exitingAlarmIds by remember { mutableStateOf(emptySet<Long>()) }
 
+    var actionAlarm by remember { mutableStateOf<Alarm?>(null) }
     var selectedIds by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     val inSelectionMode = selectedIds.isNotEmpty()
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
@@ -383,6 +391,9 @@ fun AlarmsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        item(key = "next-alarm", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            ScheduleHero(alarms, onPauseAll, { onAddAlarm?.invoke() }, onEdit)
+                        }
                         itemsIndexed(displayedAlarms, key = { _, alarm -> alarm.id }) { index, alarm ->
                             val isCardVisible = alarm.id !in exitingAlarmIds && (index < visibleCardsCount)
                             AnimatedVisibility(
@@ -422,14 +433,14 @@ fun AlarmsScreen(
                                     onToggle = { onToggle(alarm.id) },
                                     onEdit = { onEdit(alarm) },
                                     onToggleSelect = {
-                                        selectedIds = if (alarm.id in selectedIds) {
+                                        if (alarm.wake.isLocked) onEdit(alarm) else selectedIds = if (alarm.id in selectedIds) {
                                             selectedIds - alarm.id
                                         } else {
                                             selectedIds + alarm.id
                                         }
                                     },
                                     onStartSelection = {
-                                        selectedIds = selectedIds + alarm.id
+                                        if (alarm.wake.isLocked) onEdit(alarm) else actionAlarm = alarm
                                     },
                                 )
                             }
@@ -440,6 +451,20 @@ fun AlarmsScreen(
             }
         }
 
+    actionAlarm?.let { alarm ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { actionAlarm = null },
+            title = { Text(alarm.label.ifBlank { "Alarm actions" }) },
+            text = { Column {
+                com.wakr.app.ui.sheets.NavigateRow("Duplicate", null) { onDuplicate(alarm); actionAlarm = null }
+                if (alarm.nextFire(java.time.ZonedDateTime.now()) != null)
+                    com.wakr.app.ui.sheets.NavigateRow("Skip next occurrence", null) { onSkip(alarm.id); actionAlarm = null }
+                com.wakr.app.ui.sheets.NavigateRow("Lock alarm", null) { onLock(alarm); actionAlarm = null }
+                com.wakr.app.ui.sheets.NavigateRow("Select alarms", null) { selectedIds = setOf(alarm.id); actionAlarm = null }
+                com.wakr.app.ui.sheets.NavigateRow("Delete", null) {
+                    selectedIds = setOf(alarm.id); showDeleteConfirmSheet = true; actionAlarm = null
+                }
+            } }, confirmButton = { androidx.compose.material3.TextButton(onClick = { actionAlarm = null }) { Text("Close") } })
+    }
     if (showDeleteConfirmSheet) {
         DeleteItemsConfirmationSheet(
             count = selectedIds.size,
@@ -477,6 +502,7 @@ internal fun InlineAlarmEditorPanel(
     var soundUri by remember(editingAlarm?.id) { mutableStateOf(editingAlarm?.soundUri) }
     var label by remember(editingAlarm?.id) { mutableStateOf(editingAlarm?.label ?: "") }
 
+    var wake by androidx.compose.runtime.saveable.rememberSaveable(editingAlarm?.id, stateSaver = com.wakr.app.ui.sheets.WakeDraftSaver) { mutableStateOf(editingAlarm?.wake ?: com.wakr.app.core.WakeOptions()) }
     val systemSoundPicker = com.wakr.app.ui.sheets.rememberAlarmSoundSelector(soundUri) { soundUri = it }
     val soundLabel by androidx.compose.runtime.produceState(initialValue = "Default", key1 = soundUri, key2 = context) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -497,6 +523,7 @@ internal fun InlineAlarmEditorPanel(
         contentAlignment = Alignment.TopCenter,
     ) {
         AlarmPickerSheetContent(
+            wake = wake, setWake = { wake = it }, setDays = { days = it },
             title = if (editingAlarm == null || editingAlarm.id == 0L) "New Alarm" else "Edit Alarm",
             hour = hour,
             minute = minute,
@@ -520,10 +547,15 @@ internal fun InlineAlarmEditorPanel(
             onVibrateChange = { vibrate = it },
             onSoundClick = systemSoundPicker,
             onCancel = onCancel,
-            onSave = {
-                val base = editingAlarm ?: Alarm(0L, LocalTime.of(hour, minute))
+            onSave = { duplicate ->
+                val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
+                val time = LocalTime.of(saveHour, minute)
+                val base = editingAlarm ?: Alarm(0L, time)
                 val alarmToSave = base.copy(
-                    time = LocalTime.of(hour, minute),
+                    id = if (duplicate) 0 else base.id,
+                    wake = wake.forAlarmSave(days, time),
+                    pausedByGroup = false,
+                    time = time,
                     days = days,
                     vibrate = vibrate,
                     soundUri = soundUri,
@@ -861,7 +893,7 @@ private fun AlarmTile(
 ) {
     val view = LocalView.current
     val windowExpanded = LocalAppWindowSizeInfo.current.isExpanded
-    val armed = alarm.enabled
+    val armed = alarm.enabled && !alarm.pausedByGroup
     val weightTarget = if (armed) ClockFace.WEIGHT_ON else ClockFace.WEIGHT_OFF
     val animatedWeight by androidx.compose.animation.core.animateIntAsState(
         targetValue = weightTarget,
@@ -921,6 +953,10 @@ private fun AlarmTile(
     val timeToDays = hourCap * MERIDIEM_GAP_FRACTION - SWITCH_TOUCH_INSET_DP.dp - ALARM_DIGIT_BOTTOM_BLEED_DP.dp
     val tileHeight = inset * 2 + hourCap + timeToDays + SWITCH_ROW_VISIBLE_DP.dp
 
+    val badge = listOfNotNull("Temporary".takeIf { alarm.temporary }, "Locked".takeIf { alarm.wake.isLocked },
+        "Paused".takeIf { alarm.pausedByGroup || (alarm.wake.pausedUntilEpochDay ?: Long.MIN_VALUE) >
+            java.time.LocalDate.now(alarm.scheduleZone(java.time.ZoneId.systemDefault())).toEpochDay() }).joinToString(" · ")
+    val badgeHeight = if (badge.isEmpty()) 0.dp else with(androidx.compose.ui.platform.LocalDensity.current) { 22.sp.toDp() }
     Surface(
         color = Color.Transparent,
         shape = RoundedCornerShape(24.dp),
@@ -936,7 +972,7 @@ private fun AlarmTile(
             }
             .background(animatedContainer, RoundedCornerShape(24.dp))
             .border(if (selected) 2.dp else 1.25.dp, animatedBorderColor, RoundedCornerShape(24.dp))
-            .height(tileHeight)
+            .height(tileHeight + badgeHeight)
             .combinedClickable(
                 onClick = {
                     if (inSelectionMode) {
@@ -956,6 +992,7 @@ private fun AlarmTile(
             )
             .clearAndSetSemantics {
                 contentDescription = buildString {
+                    if (badge.isNotEmpty()) append("$badge, ")
                     if (selected) append("Selected, ")
                     append("%d:%02d %s".format(hour12, alarm.time.minute, meridiem))
                     if (alarm.label.isNotBlank()) append(", ${alarm.label}")
@@ -963,9 +1000,13 @@ private fun AlarmTile(
                     append(if (armed) ", on" else ", off")
                     append(", double tap to edit")
                 }
+                onClick(label = "Edit alarm") { if (inSelectionMode) onToggleSelect() else onEdit(); true }
+                onLongClick(label = "Alarm actions") { onStartSelection(); true }
             },
     ) {
             Box(Modifier.fillMaxSize()) {
+                if (badge.isNotEmpty()) Text(badge, Modifier.align(Alignment.TopCenter).padding(top = 4.dp),
+                    color = animatedInk, style = MaterialTheme.typography.labelMedium)
                 if (selected) {
                     Box(
                         modifier = Modifier
@@ -987,7 +1028,7 @@ private fun AlarmTile(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = inset, bottom = inset - SWITCH_TOUCH_INSET_DP.dp),
+                        .padding(top = inset + badgeHeight, bottom = inset - SWITCH_TOUCH_INSET_DP.dp),
                     verticalArrangement = Arrangement.spacedBy(timeToDays),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {

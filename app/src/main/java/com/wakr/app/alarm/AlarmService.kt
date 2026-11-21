@@ -13,6 +13,7 @@ import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
+import com.wakr.app.core.missOccurrence
 import com.wakr.app.R
 import com.wakr.app.data.ClockStore
 import com.wakr.app.data.SILENT
@@ -58,6 +59,8 @@ class AlarmService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val starts = Mutex()
     private var active = false
+    private var occurrence: Pair<Long, Long>? = null
+    private var torchId: String? = null
     private var silenceJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -77,16 +80,18 @@ class AlarmService : Service() {
     private fun startRinging(id: Long, at: Long, startId: Int) {
         scope.launch {
             starts.withLock {
-                val store = ClockStore(this@AlarmService)
-                val alarm = store.alarmsNow().firstOrNull { it.id == id }
-                if (alarm == null || (at > 0 && alarm.skippedOccurrenceMillis != at)) {
+                val alarm = RuntimeAlarms.read(this@AlarmService).firstOrNull { it.id == id }
+                if (alarm == null || (at > 0 && alarm.ringingAt != at)) {
                     // A stale start must neither resurrect a deleted alarm nor stop another ringer.
                     if (!active) stopSelf(startId)
                     return@launch
                 }
-                val settings = store.settingsNow()
-                ring(ringingNotification(this@AlarmService, id, alarm.label.ifBlank { "Alarm" }),
-                    alarm.soundUri, alarm.vibrate, ALARM_PATTERN, settings.alarms.silenceAfterMinutes)
+                val settings = RuntimeAlarms.settings(this@AlarmService)
+                occurrence = id to at
+                current = this@AlarmService
+                setFlash(alarm.wake.flashEnabled)
+                ring(ringingNotification(this@AlarmService, id, alarm.label.ifBlank { "Alarm" }, at),
+                    alarm.soundUri, alarm.vibrate, ALARM_PATTERN, alarm.wake.silenceAfterMin ?: settings.alarms.silenceAfterMinutes)
             }
         }
     }
@@ -100,6 +105,8 @@ class AlarmService : Service() {
                     return@launch
                 }
                 val settings = store.settingsNow()
+                occurrence = null
+                setFlash(false)
                 ring(timerNotification(this@AlarmService), settings.timers.soundUri,
                     settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
             }
@@ -119,6 +126,14 @@ class AlarmService : Service() {
         silenceJob = scope.launch {
             if (silenceMinutes <= 0) return@launch
             delay(silenceMinutes * 60_000L)
+            val token = occurrence
+            if (token != null) starts.withLock {
+                if (occurrence != token) return@launch
+                val alarms = RuntimeAlarms.update(this@AlarmService) { list -> list.map { a ->
+                    if (a.id == token.first) a.missOccurrence(token.second, System.currentTimeMillis()) else a
+                } }
+                alarms.firstOrNull { it.id == token.first }?.let { AlarmScheduler.schedule(this@AlarmService, it) }
+            }
             stopSelf()
         }
     }
@@ -146,7 +161,26 @@ class AlarmService : Service() {
         vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0), attrs)
     }
 
+    private fun setFlash(enabled: Boolean) {
+        val cameras = getSystemService(android.hardware.camera2.CameraManager::class.java) ?: return
+        runCatching {
+            torchId?.let { cameras.setTorchMode(it, false) }
+            torchId = null
+            if (enabled) {
+                val id = cameras.cameraIdList.firstOrNull {
+                    cameras.getCameraCharacteristics(it)[android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE] == true
+                }
+                if (id != null) {
+                    cameras.setTorchMode(id, true)
+                    torchId = id
+                }
+            }
+        }
+    }
+
     override fun onDestroy() {
+        if (current === this) current = null
+        setFlash(false)
         active = false
         silenceJob?.cancel()
         sound.stop()
@@ -157,6 +191,11 @@ class AlarmService : Service() {
     }
 
     companion object {
+        private var current: AlarmService? = null
+        suspend fun stopOccurrence(id: Long, at: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+            current?.takeIf { it.occurrence == (id to at) }?.stopSelf()
+        }
+
         const val ACTION_START = "com.wakr.app.RING"
         const val ACTION_START_TIMER = "com.wakr.app.RING_TIMER"
 
@@ -168,7 +207,7 @@ class AlarmService : Service() {
             context.stopService(Intent(context, AlarmService::class.java))
         }
 
-        private fun ringingNotification(context: Context, id: Long, label: String) =
+        private fun ringingNotification(context: Context, id: Long, label: String, at: Long) =
             NotificationCompat.Builder(context, Notifications.CHANNEL_ALARM)
                 .setSmallIcon(R.drawable.ic_stat_alarm)
                 .setContentTitle(label)
@@ -180,14 +219,14 @@ class AlarmService : Service() {
                 .setAutoCancel(false)
                 // Android 14+ may allow ongoing notifications to be swiped away.
                 // Treat that explicit dismissal like the visible Dismiss action.
-                .setDeleteIntent(Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 12, id))
+                .setDeleteIntent(Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 12, id, at))
                 // The full-screen intent is what wakes the device and puts the dismiss screen in
                 // front of a locked phone. It degrades to a heads-up banner where the permission
                 // is not held. That is still usable, since both actions are on the notification.
-                .setFullScreenIntent(AlarmRingActivity.intent(context, id, label), true)
-                .setContentIntent(AlarmRingActivity.intent(context, id, label))
-                .addAction(0, "Snooze", Notifications.broadcast(context, ClockActionReceiver.ACTION_SNOOZE, 10, id))
-                .addAction(0, "Dismiss", Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 11, id))
+                .setFullScreenIntent(AlarmRingActivity.intent(context, id, label, at), true)
+                .setContentIntent(AlarmRingActivity.intent(context, id, label, at))
+                .addAction(0, "Snooze", Notifications.broadcast(context, ClockActionReceiver.ACTION_SNOOZE, 10, id, at))
+                .addAction(0, "Dismiss", Notifications.broadcast(context, ClockActionReceiver.ACTION_DISMISS, 11, id, at))
                 .build()
 
         private fun timerNotification(context: Context) =

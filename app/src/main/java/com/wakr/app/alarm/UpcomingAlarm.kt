@@ -74,7 +74,7 @@ internal object UpcomingAlarm {
             val updated = store.updateAlarms { list -> list.map { alarm ->
                 if (alarm.id != id || !matches(alarm,at) || at <= System.currentTimeMillis()) alarm
                 else if (alarm.isOneShot) alarm.copy(enabled=false,snoozedUntilMillis=null,skippedOccurrenceMillis=at)
-                else alarm.copy(skippedOccurrenceMillis=at,skippedOccurrenceDate=Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate(),snoozedUntilMillis=null)
+                else alarm.copy(skippedOccurrenceMillis=at,skippedOccurrenceDate=Instant.ofEpochMilli(at).atZone(alarm.scheduleZone(ZoneId.systemDefault())).toLocalDate(),snoozedUntilMillis=null)
             } }
             hide(context,id)
             updated.firstOrNull { it.id == id }?.let { AlarmScheduler.schedule(context,it) }

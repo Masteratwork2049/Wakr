@@ -4,7 +4,9 @@ Wakr is a Material 3 Expressive alarm and clock app for Android. It builds on [E
 
 ## Features
 
-- **Alarms:** Schedule alarms with ringing and snooze functionality.
+- **Alarms:** Tap an alarm and open **Alarm options** to schedule a date, choose a time zone, pause a repeating alarm, or enable **Auto-delete after dismissal** for a one-time alarm. Temporary alarms stay on the grid through snoozes.
+- **Quick alarms:** Hold the **+** button on the Alarms tab for **Alarm in…**. Hold an alarm card for duplication, skipping, locking, selection, or deletion.
+- **Next alarm:** The Alarms tab shows the next active alarm and offers **Pause all alarms** and **Resume alarms**.
 - **Timers:** Create and manage countdown timers.
 - **Stopwatch:** Track elapsed time.
 - **Analog clock widget:** A configurable home-screen clock widget.
@@ -23,7 +25,7 @@ Wakr is built with Kotlin and Jetpack Compose. Its Android package is `com.wakr.
 
 You can also use the included Gradle wrapper to build the project from the command line.
 
-The [Phase 2 plan](docs/PHASE_2.md) covers temporary alarms and the design requirements for future features.
+The [Phase 2 specification](docs/PHASE_2.md) describes scheduling, temporary alarms, and the shared design requirements.
 
 ## Acknowledgements
 

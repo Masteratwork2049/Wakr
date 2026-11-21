@@ -40,6 +40,7 @@ fun AlarmEditSheet(
     var vibrate by rememberSaveable(initial.id) { mutableStateOf(initial.vibrate) }
     var soundUri by rememberSaveable(initial.id) { mutableStateOf(initial.soundUri) }
 
+    var wake by androidx.compose.runtime.saveable.rememberSaveable(initial.id, stateSaver = com.wakr.app.ui.sheets.WakeDraftSaver) { mutableStateOf(initial.wake) }
     val openSoundSelector = rememberAlarmSoundSelector(soundUri) { soundUri = it }
 
     val soundLabel by androidx.compose.runtime.produceState(initialValue = "Default", key1 = soundUri, key2 = context) {
@@ -56,6 +57,7 @@ fun AlarmEditSheet(
         containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
     ) {
         AlarmPickerSheetContent(
+            wake = wake, setWake = { wake = it }, setDays = { days = it },
             modal = true,
             title = "Edit Alarm",
             hour = hour,
@@ -84,9 +86,12 @@ fun AlarmEditSheet(
                     onDismiss()
                 }
             },
-            onSave = {
+            onSave = { duplicate ->
                 val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
                 val updated = initial.copy(
+                    id = if (duplicate) 0 else initial.id,
+                    wake = wake.forAlarmSave(days, LocalTime.of(saveHour, minute)),
+                    pausedByGroup = false,
                     time = LocalTime.of(saveHour, minute),
                     label = label.trim(),
                     days = days,

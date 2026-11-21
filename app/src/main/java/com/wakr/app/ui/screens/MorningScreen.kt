@@ -126,9 +126,10 @@ internal fun MorningScreen(
 }
 
 @Composable
-private fun NextAlarmCard(
+internal fun NextAlarmCard(
     next: ScheduledAlarm?, clock: DateTimeFormatter, calendar: DateTimeFormatter,
     use24h: Boolean, selected: Boolean, onAdd: () -> Unit, onEdit: (Alarm) -> Unit,
+    details: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(24.dp)
@@ -165,6 +166,7 @@ private fun NextAlarmCard(
             Text(listOf(calendar.format(next.at), next.alarm.label).filter { it.isNotBlank() }.joinToString(" · "),
                 color = colors.onPrimaryContainer, style = MaterialTheme.typography.titleMedium)
         }
+        details?.invoke()
     }
 }
 

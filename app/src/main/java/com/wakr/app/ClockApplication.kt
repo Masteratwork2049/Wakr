@@ -9,6 +9,6 @@ class ClockApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         registerActivityLifecycleCallbacks(AppLifecycleTracker)
-        OverlayManager.init(this)
+        if (com.wakr.app.alarm.RuntimeAlarms.unlocked(this)) OverlayManager.init(this)
     }
 }
