@@ -9,14 +9,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
@@ -518,34 +514,28 @@ private fun AlarmWheelNumberDialog(
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
-    var entry by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length)))
-    }
-    val value = entry.text.toIntOrNull()?.takeIf { it in values }
+    var entry by rememberSaveable { mutableStateOf("") }
+    val value = entry.toIntOrNull()?.takeIf { it in values }
     val focus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Type ${label.lowercase()}") },
         text = {
-            val keyboard = LocalSoftwareKeyboardController.current
             OutlinedTextField(
                 value = entry,
                 onValueChange = { input ->
-                    if (input.text.length <= 2 && input.text.all(Char::isDigit)) entry = input
+                    if (input.length <= 2 && input.all(Char::isDigit)) entry = input
                 },
                 modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 label = { Text(label) },
+                placeholder = { Text(initial) },
                 supportingText = { Text("${values.first()}–${values.last()}") },
-                isError = entry.text.isNotEmpty() && value == null,
+                isError = entry.isNotEmpty() && value == null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { value?.let(onSelect) }),
             )
-            LaunchedEffect(focus) {
-                focus.requestFocus()
-                withFrameNanos { }
-                keyboard?.show()
-            }
+            LaunchedEffect(focus) { focus.requestFocus() }
         },
         confirmButton = { TextButton(enabled = value != null, onClick = { value?.let(onSelect) }) { Text("Set") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
