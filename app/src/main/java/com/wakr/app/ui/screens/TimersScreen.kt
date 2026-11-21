@@ -1,0 +1,1430 @@
+package com.wakr.app.ui.screens
+
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Backspace
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlin.math.abs
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.util.lerp
+import com.wakr.app.core.ClockTimer
+import com.wakr.app.core.TimerState
+import com.wakr.app.data.DEFAULT_TIMER_PRESETS
+import com.wakr.app.ui.timerReadoutGeometry
+import com.wakr.app.ui.featheredVerticalViewport
+import com.wakr.app.data.formatPresetLabel
+import com.wakr.app.ui.glass
+import com.wakr.app.ui.elasticClickable
+import com.wakr.app.ui.luminousElasticClickable
+import com.wakr.app.ui.responsive.LocalAppWindowSizeInfo
+import com.wakr.app.ui.responsive.TwoPaneLayout
+import com.wakr.app.ui.responsive.ScrollPane
+import androidx.compose.ui.text.rememberTextMeasurer
+import com.wakr.app.ui.theme.ClockFace
+import com.wakr.app.ui.theme.Numerals
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.time.Duration
+import kotlin.math.roundToInt
+import kotlin.math.sin
+
+@Composable
+fun TimersScreen(
+    timer: ClockTimer?,
+    draft: Duration,
+    nowElapsedMillis: Long,
+    presets: List<Int> = DEFAULT_TIMER_PRESETS,
+    onDigit: (Char) -> Unit,
+    onBackspace: () -> Unit,
+    onResetDraft: () -> Unit,
+    onPreset: (Int) -> Unit,
+    onEditPreset: (Int, Int) -> Unit,
+    onStart: () -> Unit,
+    onPauseResume: () -> Unit,
+    onAddTen: () -> Unit,
+    onCancel: () -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    val active = timer != null
+    val remaining = timer?.remaining(nowElapsedMillis) ?: Duration.ZERO
+    val isFinished = timer?.state == TimerState.FINISHED || (timer?.state == TimerState.RUNNING && remaining.isZero)
+    val running = timer?.state == TimerState.RUNNING && !isFinished
+    val windowSizeInfo = LocalAppWindowSizeInfo.current
+    val bodyScroll = rememberScrollState()
+
+    if (windowSizeInfo.isExpanded) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+            contentAlignment = Alignment.Center,
+        ) {
+            AnimatedContent(
+                modifier = Modifier.graphicsLayer { clip = false },
+                targetState = active,
+                transitionSpec = {
+                    if (targetState) {
+                        slideInVertically(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = 420f,
+                            ),
+                            initialOffsetY = { it / 5 },
+                        ) + fadeIn(tween(220)) togetherWith
+                            (slideOutVertically(
+                                animationSpec = tween(160),
+                                targetOffsetY = { -it / 10 },
+                            ) + fadeOut(tween(140))) using SizeTransform(clip = false)
+                    } else {
+                        slideInVertically(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = 420f,
+                            ),
+                            initialOffsetY = { -it / 10 },
+                        ) + fadeIn(tween(220)) togetherWith
+                            (slideOutVertically(
+                                animationSpec = tween(160),
+                                targetOffsetY = { it / 5 },
+                            ) + fadeOut(tween(140))) using SizeTransform(clip = false)
+                    }
+                },
+                label = "timerBodyExpanded",
+            ) { showingActive ->
+                if (showingActive && timer != null) {
+                    ExpandedRunningTimerBody(
+                        timer = timer,
+                        nowElapsedMillis = nowElapsedMillis,
+                        isFinished = isFinished,
+                        onPauseResume = onPauseResume,
+                        onAddTen = onAddTen,
+                        onCancel = onCancel,
+                    )
+                } else {
+                    ExpandedSetTimerBody(
+                        draft = draft,
+                        presets = presets,
+                        onDigit = onDigit,
+                        onBackspace = onBackspace,
+                        onResetDraft = onResetDraft,
+                        onPreset = onPreset,
+                        onEditPreset = onEditPreset,
+                        onStart = onStart,
+                    )
+                }
+            }
+        }
+    } else {
+        Column(
+            modifier = modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            BoxWithConstraints(
+                Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                // Use the same width-derived readout geometry as the setup body. Prefer
+                // room for a preset row; scroll rather than reduce targets below 60dp.
+                val readoutHeight = timerReadoutGeometry((maxWidth - 16.dp).coerceAtLeast(0.dp), formatTimer(draft)).capHeight + 24.dp
+                val presetSpace = 54.dp + 24.dp * LocalDensity.current.fontScale
+                val bodySpacing = 4.dp + 6.dp + 24.dp + 18.dp + 18.dp
+                val keyHeight = timerKeyHeight(maxHeight, readoutHeight, presetSpace, bodySpacing)
+                AnimatedContent(
+                    modifier = Modifier.verticalScroll(bodyScroll).graphicsLayer { clip = false },
+                    targetState = active,
+                    transitionSpec = {
+                        if (targetState) {
+                            slideInVertically(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = 420f,
+                                ),
+                                initialOffsetY = { it / 5 },
+                            ) + fadeIn(tween(220)) togetherWith
+                                (slideOutVertically(
+                                    animationSpec = tween(160),
+                                    targetOffsetY = { -it / 10 },
+                                ) + fadeOut(tween(140))) using SizeTransform(clip = false)
+                        } else {
+                            slideInVertically(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = 420f,
+                                ),
+                                initialOffsetY = { -it / 10 },
+                            ) + fadeIn(tween(220)) togetherWith
+                                (slideOutVertically(
+                                    animationSpec = tween(160),
+                                    targetOffsetY = { it / 5 },
+                                ) + fadeOut(tween(140))) using SizeTransform(clip = false)
+                        }
+                    },
+                    label = "timerBody",
+                ) { showingActive ->
+                    if (showingActive && timer != null) {
+                        RunningTimerBody(timer, nowElapsedMillis, isFinished)
+                    } else {
+                        SetTimerBody(
+                            keyHeight = keyHeight,
+                            draft = draft,
+                            presets = presets,
+                            onDigit = onDigit,
+                            onBackspace = onBackspace,
+                            onResetDraft = onResetDraft,
+                            onPreset = onPreset,
+                            onEditPreset = onEditPreset,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            TimerControls(
+                hasTimer = active,
+                running = running,
+                isFinished = isFinished,
+                onStart = onStart,
+                onPauseResume = onPauseResume,
+                onAddTen = onAddTen,
+                onCancel = onCancel,
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+private fun formatTimer(duration: Duration): String {
+    val total = duration.seconds.coerceAtLeast(0)
+    return "%02d:%02d:%02d".format(total / 3600, (total % 3600) / 60, total % 60)
+}
+
+private enum class TimerRollDirection { UP, DOWN }
+
+@Composable
+private fun UpwardSetupDigitCell(
+    extraHeight: Dp = 52.dp,
+    char: Char,
+    width: Dp,
+    capHeight: Dp,
+    color: Color,
+    numeralWidth: Float,
+    staggerDelayMs: Int = 0,
+) {
+    var oldChar by remember { mutableStateOf<Char?>(null) }
+    var newChar by remember { mutableStateOf(char) }
+    val animProgress = remember { Animatable(1f) }
+
+    LaunchedEffect(char) {
+        if (char != newChar) {
+            if (staggerDelayMs > 0) {
+                delay(staggerDelayMs.toLong())
+            }
+            oldChar = newChar
+            newChar = char
+            animProgress.snapTo(0f)
+            animProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+            )
+        }
+    }
+
+    val progress = animProgress.value
+    val density = LocalDensity.current
+    val totalBoxHeight = capHeight + extraHeight
+    val heightPx = with(density) { totalBoxHeight.toPx() }
+    val isAnimating = progress < 1f && oldChar != null && oldChar != newChar
+
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(totalBoxHeight)
+            .featheredVerticalViewport(active = isAnimating, fadeHeightFraction = 0.08f),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (char == ':') {
+            Text(
+                ":",
+                fontFamily = ClockFace.family(opticalSize = 36f, width = 100f, weight = 550),
+                fontSize = (capHeight.value * 0.65f).sp,
+                color = color,
+            )
+        } else {
+            // Outgoing digit: moves strictly UPWARDS from 0 to -heightPx while fading out and blurring
+            if (progress < 1f && oldChar != null && oldChar != newChar && oldChar != ':') {
+                val outgoingY = -progress * heightPx
+                val outgoingAlpha = (1f - progress * 1.2f).coerceIn(0f, 1f)
+                val outgoingBlurDp = (progress * 3.5f).dp
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(outgoingBlurDp)
+                        .graphicsLayer {
+                            translationY = outgoingY
+                            alpha = outgoingAlpha
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Numerals(
+                        text = oldChar.toString(),
+                        capHeight = capHeight,
+                        color = color,
+                        width = numeralWidth,
+                        weight = 600,
+                        tracking = 0.004f,
+                        slashedZero = false,
+                        roundness = ClockFace.ROUNDED,
+                    )
+                }
+            }
+
+            // Incoming digit: moves UPWARDS with extended 18dp overshoot (Phase 1: 0ms..200ms UP; Phase 2: 200ms..480ms DOWN)
+            val overshootPx = with(density) { 18.dp.toPx() } // Extended vertical overshoot (18dp)
+            val incomingY = if (oldChar != null && oldChar != newChar) {
+                if (progress < 0.42f) {
+                    // Phase 1 (0ms -> 200ms): Travels UPWARDS from +heightPx past 0 to -18dp
+                    val p1 = progress / 0.42f
+                    heightPx - p1 * (heightPx + overshootPx)
+                } else {
+                    // Phase 2 (200ms -> 480ms): Settles smoothly and deliberately DOWNWARDS from -18dp to exact 0
+                    val p2 = (progress - 0.42f) / 0.58f
+                    -overshootPx * (1f + sin((p2 + 0.5f) * Math.PI.toFloat())) / 2f
+                }
+            } else {
+                0f
+            }
+
+            val incomingAlpha = (progress * 1.4f).coerceIn(0f, 1f)
+            val incomingBlurDp = ((1f - progress) * 3.5f).dp
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(incomingBlurDp)
+                    .graphicsLayer {
+                        translationY = incomingY
+                        alpha = incomingAlpha
+                        scaleX = 1f
+                        scaleY = 1f
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Numerals(
+                    text = newChar.toString(),
+                    capHeight = capHeight,
+                    color = color,
+                    width = numeralWidth,
+                    weight = 600,
+                    tracking = 0.008f,
+                    slashedZero = false,
+                    roundness = ClockFace.ROUNDED,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TickerTimerReadout(
+    text: String,
+    capHeight: Dp = 72.dp,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    scale: Float = 1f,
+    spacing: androidx.compose.ui.unit.Dp = 3.dp,
+    digitWidth: androidx.compose.ui.unit.Dp = 56.dp,
+    colonWidth: androidx.compose.ui.unit.Dp = 15.dp,
+    numeralWidth: Float = ClockFace.TIMER_WIDTH,
+    autoSize: Boolean = false,
+    setupCellExtraHeight: Dp = 52.dp,
+    rollDirection: TimerRollDirection = TimerRollDirection.UP,
+    enableStagger: Boolean = false,
+) {
+    BoxWithConstraintsCompat(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (autoSize) {
+            val geometry = timerReadoutGeometry(maxWidth, text)
+            val computedDigitWidth = geometry.digitWidth
+            val computedColonWidth = geometry.colonWidth
+            val computedSpacing = geometry.spacing
+            val computedCapHeight = geometry.capHeight
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clearAndSetSemantics { contentDescription = text },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(computedSpacing),
+            ) {
+                text.forEachIndexed { index, char ->
+                    val staggerIndex = if (rollDirection == TimerRollDirection.UP) index else (text.length - 1 - index).coerceAtLeast(0)
+                    val staggerDelayMs = if (enableStagger) (staggerIndex * 38) else 0
+
+                    if (rollDirection == TimerRollDirection.UP) {
+                        UpwardSetupDigitCell(
+                            extraHeight = setupCellExtraHeight,
+                            char = char,
+                            width = if (char == ':') computedColonWidth else computedDigitWidth,
+                            capHeight = computedCapHeight,
+                            color = color,
+                            numeralWidth = numeralWidth,
+                            staggerDelayMs = staggerDelayMs,
+                        )
+                    } else {
+                        TickerCell(
+                            char = char,
+                            width = if (char == ':') computedColonWidth else computedDigitWidth,
+                            capHeight = computedCapHeight,
+                            key = index,
+                            color = color,
+                            numeralWidth = numeralWidth,
+                            rollDirection = rollDirection,
+                            staggerDelayMs = staggerDelayMs,
+                        )
+                    }
+                }
+            }
+        } else {
+            val density = LocalDensity.current
+            val desiredWidth = with(density) {
+                (text.count { it != ':' } * digitWidth.toPx()) +
+                    (text.count { it == ':' } * colonWidth.toPx()) +
+                    ((text.length - 1).coerceAtLeast(0) * spacing.toPx())
+            }
+            val availableWidth = with(density) { maxWidth.toPx() }
+            val fitScale = if (desiredWidth > 0f) (availableWidth / desiredWidth).coerceAtMost(1f) else 1f
+
+            Row(
+                modifier = Modifier
+                    .graphicsLayer {
+                        val effective = scale
+                        scaleX = effective
+                        scaleY = effective
+                    }
+                    .clearAndSetSemantics { contentDescription = text },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing * fitScale),
+            ) {
+                text.forEachIndexed { index, char ->
+                    val staggerIndex = if (rollDirection == TimerRollDirection.UP) index else (text.length - 1 - index).coerceAtLeast(0)
+                    val staggerDelayMs = if (enableStagger) (staggerIndex * 38) else 0
+
+                    if (rollDirection == TimerRollDirection.UP) {
+                        UpwardSetupDigitCell(
+                            extraHeight = setupCellExtraHeight,
+                            char = char,
+                            width = (if (char == ':') colonWidth else digitWidth) * fitScale,
+                            capHeight = capHeight * fitScale,
+                            color = color,
+                            numeralWidth = numeralWidth,
+                            staggerDelayMs = staggerDelayMs,
+                        )
+                    } else {
+                        TickerCell(
+                            char = char,
+                            width = (if (char == ':') colonWidth else digitWidth) * fitScale,
+                            capHeight = capHeight * fitScale,
+                            key = index,
+                            color = color,
+                            numeralWidth = numeralWidth,
+                            rollDirection = rollDirection,
+                            staggerDelayMs = staggerDelayMs,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A compatibility wrapper that keeps the timer readout's measuring logic local without changing
+ * the surrounding screen API.
+ */
+@Composable
+private fun BoxWithConstraintsCompat(
+    modifier: Modifier = Modifier,
+    contentAlignment: Alignment,
+    content: @Composable androidx.compose.foundation.layout.BoxWithConstraintsScope.() -> Unit,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = modifier,
+        contentAlignment = contentAlignment,
+        content = content,
+    )
+}
+
+@Composable
+private fun TickerCell(
+    char: Char,
+    width: androidx.compose.ui.unit.Dp,
+    capHeight: androidx.compose.ui.unit.Dp,
+    key: Int,
+    color: Color,
+    numeralWidth: Float,
+    rollDirection: TimerRollDirection,
+    staggerDelayMs: Int = 0,
+) {
+    androidx.compose.animation.AnimatedContent(
+        modifier = Modifier
+            .width(width)
+            .height(capHeight + 52.dp),
+        targetState = char,
+        transitionSpec = {
+            val oldDigit = initialState.digitToIntOrNull()
+            val newDigit = targetState.digitToIntOrNull()
+            if (oldDigit == null || newDigit == null) {
+                fadeIn(tween(100)) togetherWith fadeOut(tween(70)) using SizeTransform(clip = false)
+            } else {
+                val incomingDirection = if (rollDirection == TimerRollDirection.UP) 1 else -1
+                val outgoingDirection = -incomingDirection
+
+                val springSpec = if (rollDirection == TimerRollDirection.UP) {
+                    spring<IntOffset>(
+                        stiffness = 420f,
+                        dampingRatio = 1.0f,
+                    )
+                } else {
+                    spring<IntOffset>(
+                        stiffness = 380f,
+                        dampingRatio = 0.68f, // Active timer ticker detent overshoot
+                    )
+                }
+
+                val incoming = slideInVertically(
+                    animationSpec = springSpec,
+                    initialOffsetY = { it * incomingDirection },
+                )
+
+                val outgoing = slideOutVertically(
+                    animationSpec = tween(
+                        durationMillis = if (rollDirection == TimerRollDirection.UP) 160 else 180,
+                        delayMillis = staggerDelayMs,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    targetOffsetY = { it * outgoingDirection },
+                )
+
+                incoming + fadeIn(tween(90, delayMillis = staggerDelayMs)) togetherWith
+                    (outgoing + fadeOut(tween(70, delayMillis = staggerDelayMs))) using SizeTransform(clip = false)
+            }
+        },
+        label = "timerTicker-$key",
+    ) { value ->
+        val cellBlurProgress by transition.animateFloat(
+            label = "cellBlurProgress",
+            transitionSpec = {
+                tween(durationMillis = 180, delayMillis = staggerDelayMs, easing = FastOutSlowInEasing)
+            },
+        ) { targetState ->
+            if (targetState == EnterExitState.Visible) 0f else 1f
+        }
+        val currentBlurDp = (cellBlurProgress * 3.5f).dp
+        val isCellAnimating = cellBlurProgress > 0.01f
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(currentBlurDp)
+                .featheredVerticalViewport(active = isCellAnimating, fadeHeightFraction = 0.08f),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (value == ':') {
+                Text(
+                    ":",
+                    fontFamily = ClockFace.family(opticalSize = 36f, width = 100f, weight = if (rollDirection == TimerRollDirection.DOWN) 750 else 500, roundness = ClockFace.ROUNDED),
+                    fontSize = (capHeight.value * 0.65f).sp,
+                    color = color,
+                )
+            } else {
+                Numerals(
+                    text = value.toString(),
+                    capHeight = capHeight,
+                    color = color,
+                    width = numeralWidth,
+                    weight = if (rollDirection == TimerRollDirection.DOWN) 750 else ClockFace.TIMER_WEIGHT,
+                    tracking = 0.008f,
+                    slashedZero = false,
+                    roundness = ClockFace.ROUNDED,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpandedSetTimerBody(
+    draft: Duration,
+    presets: List<Int>,
+    onDigit: (Char) -> Unit,
+    onBackspace: () -> Unit,
+    onResetDraft: () -> Unit,
+    onPreset: (Int) -> Unit,
+    onEditPreset: (Int, Int) -> Unit,
+    onStart: () -> Unit,
+) {
+    var isLongPressReset by remember { mutableStateOf(false) }
+
+    LaunchedEffect(draft) {
+        if (!draft.isZero) {
+            isLongPressReset = false
+        }
+    }
+
+    TwoPaneLayout(
+        leftPane = {
+            ScrollPane(Modifier.padding(vertical = 8.dp, horizontal = 8.dp)) {
+                Keypad(
+                    onDigit = { char ->
+                        isLongPressReset = false
+                        onDigit(char)
+                    },
+                    onBackspace = {
+                        isLongPressReset = false
+                        onBackspace()
+                    },
+                    onResetDraft = {
+                        isLongPressReset = true
+                        onResetDraft()
+                    },
+                )
+                Spacer(Modifier.height(14.dp))
+                Presets(
+                    presets = presets,
+                    onEditPreset = onEditPreset,
+                    onPreset = { seconds ->
+                        isLongPressReset = false
+                        onPreset(seconds)
+                    },
+                )
+            }
+        },
+        rightPane = {
+            ScrollPane(Modifier.padding(vertical = 12.dp, horizontal = 16.dp)) {
+                TickerTimerReadout(
+                    text = formatTimer(draft),
+                    autoSize = true,
+                    numeralWidth = 82f,
+                    rollDirection = TimerRollDirection.UP,
+                    enableStagger = isLongPressReset,
+                )
+                Spacer(Modifier.height(32.dp))
+                Box(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .height(56.dp),
+                ) {
+                    WidePill(
+                        text = "Start",
+                        icon = Icons.Rounded.PlayArrow,
+                        onClick = onStart,
+                        container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                        height = 56.dp,
+                        compact = true,
+                        fillWidth = true,
+                        glow = false,
+                    )
+                }
+            }
+        },
+        leftWeight = 1.1f,
+        rightWeight = 0.9f,
+        paneSpacing = 24.dp,
+        contentPaddingDp = 12.dp,
+    )
+}
+
+@Composable
+private fun ExpandedRunningTimerBody(
+    timer: ClockTimer,
+    nowElapsedMillis: Long,
+    isFinished: Boolean = false,
+    onPauseResume: () -> Unit,
+    onAddTen: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val remaining = if (isFinished) Duration.ZERO else timer.remaining(nowElapsedMillis)
+    val progress = if (isFinished) 1f else timer.fractionLeft(nowElapsedMillis).coerceIn(0f, 1f)
+    val primary = MaterialTheme.colorScheme.primary
+    val running = timer.state == TimerState.RUNNING && !isFinished
+
+    TwoPaneLayout(
+        leftPane = {
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                val circleSize = minOf(420.dp, maxWidth, maxHeight)
+                val readoutFit = minOf(1f, (circleSize.value - 32f).coerceAtLeast(1f) / 282f)
+                val surface = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f)
+                Box(
+                    modifier = Modifier
+                        .size(circleSize)
+                        .clip(CircleShape)
+                        .background(surface)
+                        .border(1.25.dp, MaterialTheme.colorScheme.outline.copy(alpha = .12f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ExpressiveTimerRing(
+                        progress = progress,
+                        color = primary,
+                        running = running || isFinished,
+                    )
+
+                    Column(Modifier.padding(horizontal = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        TickerTimerReadout(
+                            text = formatTimer(remaining),
+                            capHeight = 44.dp * readoutFit,
+                            scale = 0.98f,
+                            spacing = 0.5.dp,
+                            digitWidth = 42.dp * readoutFit,
+                            colonWidth = 12.dp * readoutFit,
+                            rollDirection = TimerRollDirection.DOWN,
+                            enableStagger = true,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = if (isFinished) "TIME'S UP" else when (timer.state) {
+                                TimerState.PAUSED -> "PAUSED"
+                                TimerState.RUNNING -> "TIMER"
+                                else -> "READY"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isFinished) primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .65f),
+                            letterSpacing = 1.8.sp,
+                        )
+                    }
+                }
+            }
+        },
+        rightPane = {
+            ScrollPane(Modifier.padding(vertical = 12.dp, horizontal = 24.dp)) {
+                if (isFinished) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                    ) {
+                        WidePill(
+                            text = "Stop",
+                            icon = Icons.Rounded.Close,
+                            onClick = onCancel,
+                            container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f),
+                            content = MaterialTheme.colorScheme.onTertiaryContainer,
+                            height = 56.dp,
+                            compact = true,
+                            fillWidth = true,
+                            glow = false,
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                        ) {
+                            WidePill(
+                                text = if (running) "Pause" else "Resume",
+                                icon = if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                onClick = onPauseResume,
+                                height = 56.dp,
+                                compact = true,
+                                fillWidth = true,
+                                glow = false,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                        ) {
+                            WidePill(
+                                text = "10s",
+                                icon = Icons.Rounded.Add,
+                                onClick = onAddTen,
+                                height = 56.dp,
+                                compact = true,
+                                fillWidth = true,
+                                glow = false,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                        ) {
+                            WidePill(
+                                text = "Cancel",
+                                icon = Icons.Rounded.Close,
+                                onClick = onCancel,
+                                height = 56.dp,
+                                outlined = true,
+                                content = MaterialTheme.colorScheme.onSurface,
+                                compact = true,
+                                fillWidth = true,
+                                glow = false,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        leftWeight = 1.1f,
+        rightWeight = 0.9f,
+        paneSpacing = 24.dp,
+        contentPaddingDp = 12.dp,
+    )
+}
+
+@Composable
+private fun SetTimerBody(
+    keyHeight: Dp,
+    draft: Duration,
+    presets: List<Int>,
+    onDigit: (Char) -> Unit,
+    onBackspace: () -> Unit,
+    onResetDraft: () -> Unit,
+    onPreset: (Int) -> Unit,
+    onEditPreset: (Int, Int) -> Unit,
+) {
+    var isLongPressReset by remember { mutableStateOf(false) }
+
+    LaunchedEffect(draft) {
+        if (!draft.isZero) {
+            isLongPressReset = false
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(4.dp))
+        TickerTimerReadout(
+            text = formatTimer(draft),
+            autoSize = true,
+            setupCellExtraHeight = 24.dp,
+            numeralWidth = 82f,
+            rollDirection = TimerRollDirection.UP,
+            enableStagger = isLongPressReset,
+        )
+        Spacer(Modifier.height(6.dp))
+        Keypad(
+            keyHeight = keyHeight,
+            onDigit = { char ->
+                isLongPressReset = false
+                onDigit(char)
+            },
+            onBackspace = {
+                isLongPressReset = false
+                onBackspace()
+            },
+            onResetDraft = {
+                isLongPressReset = true
+                onResetDraft()
+            },
+        )
+        Spacer(Modifier.height(18.dp))
+        Presets(
+            presets = presets,
+            onEditPreset = onEditPreset,
+            onPreset = { seconds ->
+                isLongPressReset = false
+                onPreset(seconds)
+            },
+        )
+        Spacer(Modifier.height(18.dp))
+    }
+}
+
+@Composable
+private fun Presets(
+    presets: List<Int>,
+    onPreset: (Int) -> Unit,
+    onEditPreset: (Int, Int) -> Unit,
+) {
+    var editingIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
+    editingIndex?.let { index ->
+        presets.getOrNull(index)?.let { seconds ->
+            SinglePresetEditDialog(
+                title = "Preset ${index + 1}", initialSeconds = seconds,
+                onDismiss = { editingIndex = null },
+                onConfirm = { updated -> onEditPreset(index, updated); editingIndex = null },
+            )
+        }
+    }
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(
+            "Presets",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val density = LocalDensity.current
+            val measurer = rememberTextMeasurer()
+            val style = MaterialTheme.typography.labelLargeEmphasized
+            val required = with(density) { (presets.maxOfOrNull {
+                measurer.measure(formatPresetLabel(it), style).size.width
+            } ?: 0).toDp() } + 24.dp
+            val maxColumns = ((maxWidth + 6.dp) / (required + 6.dp)).toInt().coerceIn(1, presets.size.coerceAtLeast(1))
+            val rows = (presets.size + maxColumns - 1) / maxColumns
+            val columns = if (rows == 0) 1 else (presets.size + rows - 1) / rows
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                presets.chunked(columns).forEachIndexed { rowIndex, row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEachIndexed { columnIndex, seconds ->
+                            val index = rowIndex * columns + columnIndex
+                            Box(Modifier.weight(1f)) {
+                                PresetButton(seconds, onClick = { onPreset(seconds) },
+                                    onLongClick = { editingIndex = index })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PresetButton(seconds: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val presetShape = RoundedCornerShape(27.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .luminousElasticClickable(shape = presetShape, onClick = onClick, onLongClick = onLongClick)
+            .clip(presetShape)
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .92f))
+            .border(1.25.dp, MaterialTheme.colorScheme.primary.copy(alpha = .28f), presetShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            formatPresetLabel(seconds),
+            style = MaterialTheme.typography.labelLargeEmphasized,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun Keypad(keyHeight: Dp = 76.dp, onDigit: (Char) -> Unit, onBackspace: () -> Unit, onResetDraft: () -> Unit) {
+    val view = LocalView.current
+    val rows = listOf("123", "456", "789")
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        rows.forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { c -> DigitKey(c, onDigit, Modifier.weight(1f), keyHeight) }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(Modifier.weight(1f))
+            DigitKey('0', onDigit, Modifier.weight(1f), keyHeight)
+            KeyBox(
+                height = keyHeight,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    onBackspace()
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                },
+                onLongClick = {
+                    onResetDraft()
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                },
+                container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                label = "Delete",
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.Backspace,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DigitKey(digit: Char, onDigit: (Char) -> Unit, modifier: Modifier = Modifier, keyHeight: Dp = 76.dp) {
+    val view = LocalView.current
+    KeyBox(height = keyHeight, modifier = modifier, onClick = {
+        onDigit(digit)
+        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }, label = digit.toString()) {
+        Text(
+            digit.toString(),
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = ClockFace.family(opticalSize = 30f, width = ClockFace.NORMAL, weight = 500),
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun KeyBox(
+    height: Dp = 76.dp,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    container: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    label: String,
+    content: @Composable () -> Unit,
+) {
+    val buttonShape = RoundedCornerShape(38.dp)
+    Box(
+        modifier = modifier
+            .height(height)
+            .padding(2.dp)
+            .luminousElasticClickable(
+                shape = buttonShape,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .clip(buttonShape)
+            .glass(buttonShape, container.copy(alpha = .88f), .84f, shadowElevation = 0.dp)
+            .clearAndSetSemantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun RunningTimerBody(
+    timer: ClockTimer,
+    nowElapsedMillis: Long,
+    isFinished: Boolean = false,
+) {
+    val remaining = if (isFinished) Duration.ZERO else timer.remaining(nowElapsedMillis)
+    val progress = if (isFinished) 1f else timer.fractionLeft(nowElapsedMillis).coerceIn(0f, 1f)
+    val size = 420.dp
+    val surface = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f)
+    val primary = MaterialTheme.colorScheme.primary
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        androidx.compose.foundation.layout.BoxWithConstraints {
+            val circleSize = minOf(maxWidth, size)
+            Box(
+                modifier = Modifier
+                    .size(circleSize)
+                    .clip(CircleShape)
+                    .background(surface)
+                    .border(1.25.dp, MaterialTheme.colorScheme.outline.copy(alpha = .12f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                ExpressiveTimerRing(progress = progress, color = primary, running = timer.state == TimerState.RUNNING || isFinished)
+
+                Column(Modifier.padding(horizontal = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    TickerTimerReadout(
+                        text = formatTimer(remaining),
+                        capHeight = 49.dp,
+                        scale = 0.98f,
+                        spacing = 0.5.dp,
+                        digitWidth = 47.dp,
+                        colonWidth = 13.dp,
+                        rollDirection = TimerRollDirection.DOWN,
+                        enableStagger = true,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (isFinished) "TIME'S UP" else when (timer.state) {
+                            TimerState.PAUSED -> "PAUSED"
+                            TimerState.RUNNING -> "TIMER"
+                            else -> "READY"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isFinished) primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .65f),
+                        letterSpacing = 1.8.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Material Expressive-inspired organic progress ring. */
+@Composable
+private fun ExpressiveTimerRing(progress: Float, color: Color, running: Boolean) {
+    val phase = remember { Animatable(0f) }
+    val waveFraction by animateFloatAsState(
+        targetValue = if (running) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = 360f,
+        ),
+        label = "timerWaveAmount",
+    )
+
+    // Keep the phase moving only while running. When paused, the phase coroutine is cancelled
+    // but the wave amount eases smoothly back to a flat circle. Resuming reverses that transition.
+    LaunchedEffect(running) {
+        if (running) {
+            while (true) {
+                phase.animateTo(
+                    targetValue = phase.value + (Math.PI * 2).toFloat(),
+                    animationSpec = tween(5200, easing = LinearEasing),
+                )
+            }
+        }
+    }
+
+    Canvas(Modifier.fillMaxSize().padding(10.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val baseRadius = (size.minDimension / 2f) - 14.dp.toPx()
+        val amplitude = 8.dp.toPx() * waveFraction
+        val activeSweep = 360f * progress
+
+        val backgroundPath = buildSquigglePath(
+            center = center,
+            radius = baseRadius,
+            startDegrees = 0f,
+            sweepDegrees = 360f,
+            amplitude = amplitude,
+            phase = phase.value,
+        )
+        val activePath = buildSquigglePath(
+            center = center,
+            radius = baseRadius,
+            startDegrees = 0f,
+            sweepDegrees = activeSweep,
+            amplitude = amplitude,
+            phase = phase.value,
+        )
+
+        drawPath(
+            path = backgroundPath,
+            color = color.copy(alpha = .10f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 11.dp.toPx(),
+                cap = StrokeCap.Round,
+            ),
+        )
+        if (progress > 0f) {
+            drawPath(
+                path = activePath,
+                color = color,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 11.dp.toPx(),
+                    cap = StrokeCap.Round,
+                ),
+            )
+        }
+    }
+}
+
+private fun buildSquigglePath(
+    center: Offset,
+    radius: Float,
+    startDegrees: Float,
+    sweepDegrees: Float,
+    amplitude: Float,
+    phase: Float,
+): Path {
+    val path = Path()
+    val steps = maxOf(96, (kotlin.math.abs(sweepDegrees) / 1.25f).toInt())
+
+    fun point(degrees: Float): Offset {
+        val angle = Math.toRadians((degrees - 90f).toDouble())
+        // Tight, expressive waves with several nearby frequencies so the outline feels organic
+        // without developing a visible seam.
+        val primary = kotlin.math.sin(angle * 16.0 + phase)
+        val secondary = kotlin.math.sin(angle * 11.0 - phase * 0.68) * 0.34
+        val tertiary = kotlin.math.sin(angle * 23.0 + phase * 1.30) * 0.13
+        val wave = amplitude * (primary + secondary + tertiary)
+        val r = radius + wave.toFloat()
+        return Offset(
+            center.x + kotlin.math.cos(angle).toFloat() * r,
+            center.y + kotlin.math.sin(angle).toFloat() * r,
+        )
+    }
+
+    for (i in 0..steps) {
+        val t = i / steps.toFloat()
+        val degrees = startDegrees + sweepDegrees * t
+        val p = point(degrees)
+        if (i == 0) {
+            path.moveTo(p.x, p.y)
+        } else {
+            val previousDegrees = startDegrees + sweepDegrees * ((i - 1) / steps.toFloat())
+            val previous = point(previousDegrees)
+            val midpoint = Offset((previous.x + p.x) / 2f, (previous.y + p.y) / 2f)
+            path.quadraticBezierTo(previous.x, previous.y, midpoint.x, midpoint.y)
+            if (i == steps) path.lineTo(p.x, p.y)
+        }
+    }
+    if (sweepDegrees >= 359f) path.close()
+    return path
+}
+
+@Composable
+private fun TimerControls(
+    hasTimer: Boolean,
+    running: Boolean,
+    isFinished: Boolean = false,
+    onStart: () -> Unit,
+    onPauseResume: () -> Unit,
+    onAddTen: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    if (isFinished) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TIMER_ROW_HEIGHT)
+                .padding(horizontal = 20.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            WidePill(
+                text = "Stop",
+                icon = Icons.Rounded.Close,
+                onClick = onCancel,
+                container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f),
+                content = MaterialTheme.colorScheme.onTertiaryContainer,
+                height = TIMER_ROW_HEIGHT,
+                compact = true,
+                fillWidth = true,
+                glow = false,
+            )
+        }
+        return
+    }
+    // Intentionally mirrors the Stopwatch control morph so the Timer page uses the exact same
+    // expansion rhythm, spacing, and button choreography. The expanded row is simply Pause/Resume,
+    // Add ten seconds, Cancel instead of Lap/Reset/Stop.
+    val expanded = hasTimer
+    val expand by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "timerControlsExpand",
+    )
+    val label by animateFloatAsState(
+        targetValue = if (expanded) 0f else 1f,
+        animationSpec = tween(durationMillis = TIMER_LABEL_FADE_MS),
+        label = "timerControlsLabel",
+    )
+    val split by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = TIMER_SPLIT_MS,
+            delayMillis = if (expanded) TIMER_EXPAND_LEAD_MS else 0,
+        ),
+        label = "timerControlsSplit",
+    )
+    val e = expand.coerceIn(0f, 1f)
+
+    SubcomposeLayout(
+        Modifier.fillMaxWidth().height(TIMER_ROW_HEIGHT).padding(horizontal = 20.dp),
+    ) { constraints ->
+        val full = constraints.maxWidth
+        val h = TIMER_ROW_HEIGHT.roundToPx()
+
+        val rowWidth = subcompose("timerRowProbe") {
+            DigitRow(
+                part = "00",
+                capHeight = 66.dp,
+                color = MaterialTheme.colorScheme.primary,
+                separator = true,
+            )
+        }.first().measure(Constraints()).width
+
+        val natural = subcompose("timerStartProbe") {
+            WidePill(
+                text = "Start",
+                icon = Icons.Rounded.PlayArrow,
+                onClick = {},
+                height = TIMER_ROW_HEIGHT,
+                compact = true,
+                fillWidth = false,
+                contentPaddingH = 28.dp,
+                glow = false,
+            )
+        }.first().measure(Constraints(minHeight = h, maxHeight = h)).width
+
+        val collapsedW = maxOf(rowWidth - TIMER_ROW_INSET.roundToPx(), natural).coerceAtMost(full)
+        val collapsedX = ((full - collapsedW) / 2).coerceAtLeast(0)
+        val w = lerp(collapsedW, full, e)
+        val x = lerp(collapsedX, 0, e)
+
+        val single = if (split < 1f) {
+            subcompose("timerSingle") {
+                Box(Modifier.graphicsLayer { alpha = 1f - split }) {
+                    WidePill(
+                        text = "Start",
+                        icon = Icons.Rounded.PlayArrow,
+                        onClick = onStart,
+                        container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                        height = TIMER_ROW_HEIGHT,
+                        compact = true,
+                        contentPaddingH = 28.dp,
+                        contentAlpha = label,
+                        glow = false,
+                    )
+                }
+            }.first().measure(Constraints.fixed(w, h))
+        } else null
+
+        val trio = if (split > 0f) {
+            subcompose("timerTrio") {
+                Box(Modifier.graphicsLayer { alpha = split }) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(TIMER_GAP * split)) {
+                        Box(Modifier.weight(1f)) {
+                            WidePill(
+                                text = if (running) "Pause" else "Resume",
+                                icon = if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                onClick = onPauseResume,
+                                height = TIMER_ROW_HEIGHT,
+                                compact = true,
+                                glow = false,
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            WidePill(
+                                text = "10s",
+                                icon = Icons.Rounded.Add,
+                                onClick = onAddTen,
+                                height = TIMER_ROW_HEIGHT,
+                                compact = true,
+                                glow = false,
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            WidePill(
+                                text = "Cancel",
+                                icon = Icons.Rounded.Close,
+                                onClick = onCancel,
+                                height = TIMER_ROW_HEIGHT,
+                                outlined = true,
+                                content = MaterialTheme.colorScheme.onSurface,
+                                compact = true,
+                                glow = false,
+                            )
+                        }
+                    }
+                }
+            }.first().measure(Constraints.fixed(full, h))
+        } else null
+
+        layout(full, h) {
+            single?.place(x, 0)
+            trio?.place(0, 0)
+        }
+    }
+}
+
+private val TIMER_GAP = 6.dp
+private val TIMER_ROW_HEIGHT = 56.dp
+private val TIMER_ROW_INSET = 10.dp
+private const val TIMER_EXPAND_LEAD_MS = 95
+private const val TIMER_SPLIT_MS = 150
+private const val TIMER_LABEL_FADE_MS = 70
+

@@ -1,0 +1,195 @@
+Expressive Wake • Android repository audit and Phase 1
+=====================================================
+
+Scope
+-----
+This audit covers the Android app in :app. The separate installer-helper project
+has its own build. The implementation extends the base app on main. The debug
+package is app.expressiveclock.debug, so it can coexist with the release app.
+
+Source revisions
+----------------
+Expressive Clock     414e1adcff0cdc8f94227f8ae507926308b27414
+WakeNudge            53822929789b26af250df12c1acdb3e56bfba32e
+BlackyHawky/Clock    36906bd9e4fd99509cc50366745a3189ff6f0e72
+
+Expressive Clock's source uses the MIT license and bundles separately licensed
+fonts. WakeNudge uses Apache-2.0 and BlackyHawky/Clock uses GPLv3. The two
+reference apps informed the schema. The new app code was written in the base
+repository.
+
+Findings that affect users
+--------------------------
+1. Alarms can miss their first ring after a locked reboot. BootReceiver is
+   directBootAware, but returns before reading credential-protected preferences
+   while the user is locked. AlarmReceiver, AlarmService and AlarmRingActivity
+   also need a usable Direct Boot path before a pre-unlock alarm can ring.
+   Phase 2 needs a device-protected schedule, a minimal ringing path and a
+   reboot-before-unlock test. Registered household codes and wake history can
+   stay in credential-protected storage.
+
+2. A spring-forward transition can shift the following day's alarm by an hour.
+   Alarm.nextFire applies the time to today before adding days. Given 10:00 on
+   March 8, 2026 in America/New_York and a Monday alarm set for 02:30, the
+   upstream date calculation yields March 9 at 03:30. Constructing Monday's
+   local date and time first yields 02:30. The audit reproduced the difference
+   using java.time. Phase 2 covers candidate-date construction, pinned alarm
+   zones and the policy for repeated or nonexistent local times.
+
+3. The upstream app offers a Google Play update check. Both Android backup
+   rules include the DataStore file. Phase 1 removes the in-app update client,
+   keeps privacy information available locally and excludes clock preferences
+   and files from cloud backup. The Android 12+ direct-device transfer rule
+   still carries clock data when a user moves phones.
+
+4. The baseline has a single persisted timer and four editable presets.
+   ClockViewModel, TimerScheduler and the overlay read the same nullable timer.
+   Concurrent timers need separate deadlines, identities and notifications in
+   Phase 4. Raising the preset count also requires updating both the settings
+   decoder and editor, which currently expect four values.
+
+Build and architecture
+----------------------
+Gradle 9.4.1 • AGP 9.2.1 • Kotlin Compose plugin 2.4.0 • built-in AGP Kotlin
+Gradle daemon JDK 25 • Java source/target 17 • minSdk 26 • targetSdk 36
+compileSdk 37 • app version 0.1.10 (13)
+Compose alpha BOM 2026.07.01 • Material 3 1.5.0-alpha25
+Preferences DataStore 1.2.1 • central AndroidViewModel • direct construction
+
+settings.gradle.kts, gradle/libs.versions.toml, app/build.gradle.kts and
+gradle/gradle-daemon-jvm.properties specify the build. ClockViewModel owns UI
+state. Receivers and services construct ClockStore against the same DataStore
+delegate. Settings use typed preference keys. Alarms and cities use ordered
+JSON arrays. The timer, stopwatch and widget records have separate keys.
+
+ClockTheme selects MaterialExpressiveTheme, dynamic or generated palettes,
+expressive motion and AMOLED surface roles. The code includes six named
+palettes beyond Concept, Violet and Coral. Type.kt and ClockFace.kt provide
+the variable-font styles, condensed alarm numerals and tabular features.
+ClockApp's HorizontalPager and ClockDock drive compact and wide layouts.
+WideClockPages hosts the paired alarms and world-clock views. Both alarm
+editors use copies of the existing Alarm record. The detached add button
+belongs to Alarms and World Clock.
+
+AlarmScheduler already calls setAlarmClock and falls back to setWindow when
+exact scheduling is unavailable. AlarmReceiver consumes an occurrence before
+starting the media-playback foreground service. AlarmAudio requests alarm
+audio focus and uses MediaPlayer's partial wake lock. AlarmRingActivity shows
+over the lock screen. Both ringing UI and notification actions converge on
+ClockActionReceiver. These are the integration points for later scheduling,
+missions and logging.
+
+Reference features
+------------------
+BlackyHawky/Clock's provider/Alarm.java and alarms/AlarmStateManager.java
+separate alarm definitions from instances. They illustrate date and pause
+handling, missed repeats, per-alarm snooze, crescendo and deletion. An
+instance identity will matter when distinguishing a snooze from the next
+scheduled occurrence of a repeating alarm.
+
+WakeNudge's missions/, ui/ring/RingMissions.kt and ui/morning/MorningScreen.kt
+show mission sequencing and event-based wake history. It uses Room and Hilt,
+and CameraX with ZXing for barcode decoding. Its manifest declares INTERNET
+for an optional update feature. Phase 1 keeps the base app's DataStore and
+uses the offline decoder. Google documents performance and utilization
+metrics in the ML Kit terms. The scanner dependencies are CameraX 1.6.2
+and ZXing Core 3.5.4. Camera permission and live scanning belong with the
+mission runner in Phase 3.
+
+Phase 1 implementation
+----------------------
+Alarm retains its existing ID, LocalTime, ISO weekday set, enable flag, URI,
+vibration and pending/consumed occurrence fields. WakeOptions adds dates,
+time zone, lock, difficulty, sound rotation/local URIs, volume, fade,
+vibration pattern, flash, voice, snooze, missed-ring behavior, reboot limit
+and still-awake settings. Nullable duration overrides inherit the user's live
+global defaults. New saved alarms have a creation timestamp. The creation
+time of an existing alarm stays unknown.
+
+Missions are an ordered list owned by each alarm. Its ID supplies alarmId,
+and list position supplies orderIndex. Deleting an alarm removes its chain in
+the same write. A registered target stores its kind, exact barcode or NFC
+value, and label. Each assigned mission can retain a target snapshot.
+History stores the original alarm label and times independently of the alarm,
+so an edit or deletion preserves the record. Retrying a history write with the
+same occurrence ID updates the record atomically.
+
+WakeMigration runs through Preferences DataStore before callers read the
+file. It adds policy defaults to existing records and leaves their legacy
+fields and the other preference keys intact. An absent alarms key retains the
+upstream first-install seeds. An explicitly empty array stays empty.
+
+Morning is the fifth pager and dock destination and a selectable startup
+page. Screen readers receive the tab label. The active indicator follows the
+actual number of destinations. Preview 2 shows the next alarm with the same
+rolling hour/minute digits as the Alarms screen. Tapping the card edits the
+alarm or opens the alarm picker when none is scheduled. The next seven days
+show upcoming local occurrences. Selecting a day lists its alarms. Existing
+history entries appear below the schedule. Recording wake outcomes and
+drawing retrospective seven-day statistics are Phase 5 work. Advanced scheduling and
+interactive missions are Phase 2 and 3 work.
+
+The current Phase 2 plan is in PHASE_2.md.
+
+Source references
+-----------------
+https://github.com/samuelbeckman/expressive-clock/tree/414e1adcff0cdc8f94227f8ae507926308b27414
+https://github.com/riyadmondol2006/WakeNudge/tree/53822929789b26af250df12c1acdb3e56bfba32e
+https://github.com/BlackyHawky/Clock/tree/36906bd9e4fd99509cc50366745a3189ff6f0e72
+https://developers.google.com/ml-kit/terms
+
+
+Original Phase 1 debug build verification and delivery
+------------------------------------------------------
+./gradlew assembleDebug testDebugUnitTest passed. All 100 JVM tests passed.
+The new real-file tests upgrade vanilla preferences, reopen the store, check
+empty and seed states, round-trip all seven mission types, and exercise
+concurrent history writes, retries, reordering and alarm deletion.
+The merged-manifest regression test rejects Internet and network-state
+permissions. All 12 upstream Python tests passed with unittest discovery.
+
+aapt inspected the packaged APK permissions. INTERNET and ACCESS_NETWORK_STATE
+are absent. Omitting the optional CameraX view/video dependency removed the
+transitive Media3 network-state declaration. apksigner verified the signature.
+The package contains both barcode-library notice files. Clock code and hardware
+flows were verified through source and host tests only. Device rendering,
+camera, NFC, sound and cold-boot delivery still require Android device testing.
+
+Build tools reported upstream deprecated Compose/Android APIs and a protobuf
+Unsafe warning on the repository's prescribed JDK. Some native debug
+libraries were packaged without symbol stripping. These were nonfatal.
+
+APK                 ExpressiveWake-phase1-debug.apk
+Application ID      app.expressiveclock.debug
+APK SHA-256         ff351061cb6c95a45baa3ee3847291709f4e8d7f9bb6d993035af220d3a5df0e
+Source archive      ExpressiveWake-phase1-source.zip
+Branch              main
+Working tree        Local implementation, uncommitted
+
+Changed files (M indicates modified and ?? indicates new)
+--------------------------------------------------------
+## main...origin/main
+ M THIRD-PARTY-NOTICES.md
+ M app/build.gradle.kts
+ M app/src/main/java/app/expressiveclock/core/Model.kt
+ M app/src/main/java/app/expressiveclock/data/ClockStore.kt
+ M app/src/main/java/app/expressiveclock/data/Settings.kt
+ M app/src/main/java/app/expressiveclock/ui/ClockApp.kt
+ M app/src/main/java/app/expressiveclock/ui/ClockDock.kt
+ M app/src/main/java/app/expressiveclock/ui/ClockViewModel.kt
+ M app/src/main/java/app/expressiveclock/ui/screens/SettingsScreen.kt
+ M app/src/main/java/app/expressiveclock/ui/sheets/About.kt
+ M app/src/main/res/xml/backup_rules.xml
+ M app/src/main/res/xml/data_extraction_rules.xml
+ M app/src/test/java/app/expressiveclock/ui/StartupPageTest.kt
+ M gradle/libs.versions.toml
+ M privacy-policy.html
+?? app/src/main/assets/licenses/apache-2.0.txt
+?? app/src/main/assets/licenses/zxing-notice.txt
+?? app/src/main/java/app/expressiveclock/core/Wake.kt
+?? app/src/main/java/app/expressiveclock/data/WakeJson.kt
+?? app/src/main/java/app/expressiveclock/data/WakeMigration.kt
+?? app/src/main/java/app/expressiveclock/ui/screens/MorningScreen.kt
+?? app/src/test/java/app/expressiveclock/data/OfflineManifestTest.kt
+?? app/src/test/java/app/expressiveclock/data/WakeStoreTest.kt
+?? docs/EXPRESSIVE_WAKE_AUDIT.txt

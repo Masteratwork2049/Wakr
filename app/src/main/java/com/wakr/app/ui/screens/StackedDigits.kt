@@ -1,0 +1,252 @@
+package com.wakr.app.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.wakr.app.ui.theme.ClockFace
+import com.wakr.app.ui.blueGlow
+import com.wakr.app.ui.glass
+import com.wakr.app.ui.luminousElasticClickable
+import com.wakr.app.ui.theme.Numerals
+
+/**
+ * The concept's timer readout: **one pair of digits per line**, right-aligned, with the
+ * separators drawn as two large dots rather than set as a colon.
+ *
+ * Three lines of two digits instead of one line of eight is what lets the numerals be this big.
+ * On one line, `00:00:09` across a 412 dp screen caps out around 60 dp of cap height, while
+ * stacked it reaches 77 dp. The concept is not being decorative here; the stack is the only way to
+ * get a glanceable countdown onto a phone.
+ *
+ * Measured off the render: the three rows are in exact register, laid out as a **3-cell tabular
+ * string** (one separator cell plus two digit cells, cell advance 67.2 dp), and that block is
+ * **centred on the screen**, not right-aligned. Row pitch is 115 dp baseline to baseline, an ink
+ * gap of 35.2 dp. The separator dots sit in the leading cell on the baseline, 18 dp across with
+ * their centres 40.8 dp apart, and row one's pictogram is centred in that same cell.
+ *
+ * The readout has its own cut of the same family, `wdth` 95 / `wght` 490 with the slashed zero.
+ * That cut was measured off the render rather than borrowed from the alarm grid, which is a much
+ * narrower and much lighter face and looked nothing like it.
+ */
+@Composable
+fun StackedDigits(
+    parts: List<String>,
+    capHeight: Dp,
+    color: Color,
+    modifier: Modifier = Modifier,
+    leading: ImageVector? = null,
+    label: String? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (label != null) {
+                    Modifier.clearAndSetSemantics { contentDescription = label }
+                } else {
+                    Modifier
+                }
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        // 35.2 dp measured. `Numerals` boxes are ink-tight, so this is the true ink gap with no
+        // ascent padding quietly padding it out.
+        verticalArrangement = Arrangement.spacedBy(35.dp),
+    ) {
+        parts.forEachIndexed { i, part ->
+            DigitRow(
+                part = part,
+                capHeight = capHeight,
+                color = color,
+                leading = leading.takeIf { i == 0 },
+                separator = i > 0,
+            )
+        }
+    }
+}
+
+/**
+ * One line of the readout: a leading cell holding a pictogram, colon dots or nothing, followed by
+ * the digit pair.
+ *
+ * Public because things have to line up with it. The stopwatch's Start button is exactly as wide as
+ * a `: ss` row, and the only way to be *exactly* that is to measure this composable rather than to
+ * add up a cell constant and a guess at the digit advance.
+ */
+@Composable
+fun DigitRow(
+    part: String,
+    capHeight: Dp,
+    color: Color,
+    modifier: Modifier = Modifier,
+    leading: ImageVector? = null,
+    separator: Boolean = false,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        // The separator's own tabular cell, the same advance as a digit cell.
+        Box(Modifier.width(SEPARATOR_CELL_DP.dp), contentAlignment = Alignment.Center) {
+            when {
+                leading != null -> androidx.compose.material3.Icon(
+                    leading,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(46.dp),
+                )
+                separator -> ColonDots(color)
+            }
+        }
+        Numerals(
+            text = part,
+            capHeight = capHeight,
+            color = color,
+            // The concept's Plank cut: 0.66 wide over tall, stroke 0.139 of cap, slashed zero. Not
+            // the alarm grid's condensed face and not its light off-weight.
+            width = ClockFace.TIMER_WIDTH,
+            weight = ClockFace.TIMER_WEIGHT,
+            slashedZero = true,
+        )
+    }
+}
+
+/** Measured: 18 dp dots with their centres 40.8 dp apart, so 22.8 dp of clear space between. */
+private const val SEPARATOR_CELL_DP = 67.2f
+private val DOT_DIAMETER = 18.dp
+
+/**
+ * How far a row's **visible** left edge sits inside its layout box.
+ *
+ * The separator gets a whole tabular cell of the same advance as a digit, and the colon's dots are
+ * centred in it. So the box starts a good deal to the left of any ink, and anything that lines up
+ * with the box rather than with the colon comes out looking off-centre even though the number is
+ * right. Derived from the two constants above rather than measured off a screenshot, so it cannot
+ * drift away from them.
+ */
+val ROW_INK_INSET: Dp = (SEPARATOR_CELL_DP.dp - DOT_DIAMETER) / 2
+
+@Composable
+private fun ColonDots(color: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(22.8.dp)) {
+        repeat(2) {
+            Surface(color = color, shape = CircleShape, modifier = Modifier.size(DOT_DIAMETER)) {}
+        }
+    }
+}
+
+/**
+ * The wide action pill the concept puts under its timer.
+ *
+ * Measured at **136 dp tall** and fully rounded: an M3 Expressive extra-large button. This is the
+ * one control on the screen, so it gets the size that says so. M3E tactic 4, contain for emphasis,
+ * in its most literal form. An earlier build had it at 78 dp, which read as an ordinary button.
+ */
+/** Measured off the render's Pause button. */
+const val PILL_HEIGHT_DP = 136f
+
+@Composable
+fun WidePill(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+    content: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    icon: ImageVector? = null,
+    outlined: Boolean = false,
+    height: Dp = PILL_HEIGHT_DP.dp,
+    compact: Boolean = false,
+    fillWidth: Boolean = true,
+    contentPaddingH: Dp = if (compact) 10.dp else 24.dp,
+    contentAlpha: Float = 1f,
+    glow: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+            .height(height)
+            .luminousElasticClickable(
+                shape = CircleShape,
+                maxStretchPercent = 0.09f,
+                maxTranslateDp = 2.4.dp,
+                onClick = onClick,
+            )
+            .clip(CircleShape)
+            .glass(
+                CircleShape,
+                if (outlined) MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .94f)
+                else container.copy(alpha = .40f),
+                .86f,
+                shadowElevation = if (glow) 18.dp else 0.dp,
+            )
+            .padding(horizontal = contentPaddingH),
+        contentAlignment = Alignment.Center,
+    ) {
+        val textStyle = if (compact) MaterialTheme.typography.titleMediumEmphasized else MaterialTheme.typography.headlineSmallEmphasized
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = contentAlpha },
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (compact) 22.dp else 30.dp),
+                    tint = content,
+                )
+                if (text.isNotEmpty()) Spacer(Modifier.width(if (compact) 8.dp else 14.dp))
+            }
+            if (text.isNotEmpty()) {
+                FittedPillLabel(text, textStyle.copy(color = content), Modifier.weight(1f, fill = false))
+            }
+        }
+    }
+}
+
+/** Fit the measured glyph run, including letter spacing and Android's nonlinear font scaling. */
+internal fun pillLabelScale(width: Int, height: Int, availableWidth: Int, availableHeight: Int): Float =
+    minOf(1f, availableWidth.toFloat() / width.coerceAtLeast(1), availableHeight.toFloat() / height.coerceAtLeast(1))
+        .coerceAtLeast(0f)
+
+@Composable
+private fun FittedPillLabel(text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier) {
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { constraints ->
+        val label = subcompose("label") {
+            Text(text, style = style, maxLines = 1, softWrap = false)
+        }.single().measure(androidx.compose.ui.unit.Constraints())
+        val fit = pillLabelScale(label.width, label.height, constraints.maxWidth, constraints.maxHeight)
+        val width = (label.width * fit).toInt().coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = (label.height * fit).toInt().coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            label.placeWithLayer(0, 0) {
+                scaleX = fit; scaleY = fit
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+            }
+        }
+    }
+}

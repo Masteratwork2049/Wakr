@@ -1,0 +1,135 @@
+package com.wakr.app.data
+
+import com.wakr.app.core.AlarmDifficulty
+import com.wakr.app.core.AlarmMission
+import com.wakr.app.core.AlarmSoundMode
+import com.wakr.app.core.MissionDifficulty
+import com.wakr.app.core.MissionType
+import com.wakr.app.core.ScanKind
+import com.wakr.app.core.ScanTarget
+import com.wakr.app.core.VibrationPattern
+import com.wakr.app.core.WakeOptions
+import com.wakr.app.core.WakeOutcome
+import com.wakr.app.core.WakeUpLog
+import org.json.JSONArray
+import org.json.JSONObject
+
+internal fun <T> jsonArray(values: List<T>, encode: (T) -> JSONObject) =
+    JSONArray().apply { values.forEach { put(encode(it)) } }
+
+internal fun <T> JSONArray.records(decode: (JSONObject) -> T): List<T> =
+    (0 until length()).mapNotNull { index ->
+        optJSONObject(index)?.let { runCatching { decode(it) }.getOrNull() }
+    }
+
+private inline fun <reified T : Enum<T>> JSONObject.enum(key: String, default: T): T =
+    enumValues<T>().firstOrNull { it.name == optString(key) } ?: default
+
+internal fun JSONObject.longOrNull(key: String) = opt(key)?.toString()?.toLongOrNull()
+private fun JSONObject.intOrNull(key: String) = opt(key)?.toString()?.toIntOrNull()
+
+internal fun WakeOptions.toJson() = JSONObject()
+    .put("scheduledDateEpochDay", scheduledDateEpochDay)
+    .put("pausedUntilEpochDay", pausedUntilEpochDay)
+    .put("timeZoneId", timeZoneId)
+    .put("isLocked", isLocked)
+    .put("difficulty", difficulty.name)
+    .put("soundMode", soundMode.name)
+    .put("musicUris", JSONArray(musicUris))
+    .put("volumePercent", volumePercent)
+    .put("fadeInSeconds", fadeInSeconds)
+    .put("vibrationPattern", vibrationPattern.name)
+    .put("flashEnabled", flashEnabled)
+    .put("voiceAnnounceEnabled", voiceAnnounceEnabled)
+    .put("snoozeEnabled", snoozeEnabled)
+    .put("snoozeDurationMin", snoozeDurationMin)
+    .put("maxSnoozes", maxSnoozes)
+    .put("shakeToSnooze", shakeToSnooze)
+    .put("silenceAfterMin", silenceAfterMin)
+    .put("repeatMissedCount", repeatMissedCount)
+    .put("reRingIntervalMin", reRingIntervalMin)
+    .put("deleteAfterDismiss", deleteAfterDismiss)
+    .put("lockBeforeRingMin", lockBeforeRingMin)
+    .put("relaunchOnLeave", relaunchOnLeave)
+    .put("rebootSurvivalMax", rebootSurvivalMax)
+    .put("stillAwakeChecksCount", stillAwakeChecksCount)
+    .put("stillAwakeDelayMin", stillAwakeDelayMin)
+
+internal fun JSONObject.toWakeOptions() = WakeOptions(
+    scheduledDateEpochDay = longOrNull("scheduledDateEpochDay"),
+    pausedUntilEpochDay = longOrNull("pausedUntilEpochDay"),
+    timeZoneId = optString("timeZoneId").takeIf { !isNull("timeZoneId") && it.isNotEmpty() },
+    isLocked = optBoolean("isLocked", false),
+    difficulty = enum("difficulty", AlarmDifficulty.EASY),
+    soundMode = enum("soundMode", AlarmSoundMode.ONE),
+    musicUris = optJSONArray("musicUris")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty(),
+    volumePercent = optInt("volumePercent", 100),
+    fadeInSeconds = optInt("fadeInSeconds", 0),
+    vibrationPattern = enum("vibrationPattern", VibrationPattern.DEFAULT),
+    flashEnabled = optBoolean("flashEnabled", false),
+    voiceAnnounceEnabled = optBoolean("voiceAnnounceEnabled", false),
+    snoozeEnabled = optBoolean("snoozeEnabled", true),
+    snoozeDurationMin = intOrNull("snoozeDurationMin"),
+    maxSnoozes = intOrNull("maxSnoozes"),
+    shakeToSnooze = optBoolean("shakeToSnooze", false),
+    silenceAfterMin = intOrNull("silenceAfterMin"),
+    repeatMissedCount = optInt("repeatMissedCount", 0),
+    reRingIntervalMin = optInt("reRingIntervalMin", 5),
+    deleteAfterDismiss = optBoolean("deleteAfterDismiss", false),
+    lockBeforeRingMin = optInt("lockBeforeRingMin", 0),
+    relaunchOnLeave = optBoolean("relaunchOnLeave", false),
+    rebootSurvivalMax = optInt("rebootSurvivalMax", 0),
+    stillAwakeChecksCount = optInt("stillAwakeChecksCount", 0),
+    stillAwakeDelayMin = optInt("stillAwakeDelayMin", 5),
+)
+
+internal fun ScanTarget.toJson() = JSONObject()
+    .put("kind", kind.name).put("value", value).put("label", label)
+
+internal fun JSONObject.toScanTarget() = ScanTarget(
+    kind = ScanKind.valueOf(getString("kind")),
+    value = getString("value"),
+    label = getString("label"),
+)
+
+internal fun AlarmMission.toJson() = JSONObject()
+    .put("id", id)
+    .put("type", type.name)
+    .put("difficulty", difficulty.name)
+    .put("roundsOrCount", roundsOrCount)
+    .put("config", configJson)
+    .put("target", target?.toJson())
+
+internal fun JSONObject.toMission() = AlarmMission(
+    id = getLong("id"),
+    type = MissionType.valueOf(getString("type")),
+    difficulty = enum("difficulty", MissionDifficulty.EASY),
+    roundsOrCount = optInt("roundsOrCount", 1),
+    configJson = optString("config", "{}"),
+    target = optJSONObject("target")?.toScanTarget(),
+)
+
+internal fun WakeUpLog.toJson() = JSONObject()
+    .put("id", id)
+    .put("alarmId", alarmId)
+    .put("alarmLabel", alarmLabel)
+    .put("scheduledTriggerAt", scheduledTriggerAt)
+    .put("firstRingAt", firstRingAt)
+    .put("dismissedAt", dismissedAt)
+    .put("snoozeCount", snoozeCount)
+    .put("stillAwakePassed", stillAwakePassed)
+    .put("wasCleanWakeUp", wasCleanWakeUp)
+    .put("outcome", outcome.name)
+
+internal fun JSONObject.toWakeUpLog() = WakeUpLog(
+    id = getLong("id"),
+    alarmId = getLong("alarmId"),
+    alarmLabel = getString("alarmLabel"),
+    scheduledTriggerAt = getLong("scheduledTriggerAt"),
+    firstRingAt = getLong("firstRingAt"),
+    dismissedAt = longOrNull("dismissedAt"),
+    snoozeCount = getInt("snoozeCount"),
+    stillAwakePassed = if (isNull("stillAwakePassed")) null else getBoolean("stillAwakePassed"),
+    wasCleanWakeUp = getBoolean("wasCleanWakeUp"),
+    outcome = WakeOutcome.valueOf(getString("outcome")),
+)

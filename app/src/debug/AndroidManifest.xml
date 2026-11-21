@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application><activity android:name="com.wakr.app.ExpandedIslandProbeActivity" android:theme="@style/Theme.MaterialClock.App" android:exported="true" android:configChanges="orientation|screenSize|screenLayout" /><activity android:name="com.wakr.app.IslandDisplayProbeActivity" android:exported="true" android:configChanges="orientation|screenSize|screenLayout" /></application>
+    <instrumentation android:name="com.wakr.app.CalibrationProbe" android:targetPackage="com.wakr.app" />
+    <instrumentation android:name="com.wakr.app.AlarmProbe" android:targetPackage="com.wakr.app" android:label="ADB alarm regression probe" />
+    <instrumentation android:name="com.wakr.app.LayoutProbe" android:targetPackage="com.wakr.app" android:label="Opt-in ADB layout fixture" />
+</manifest>

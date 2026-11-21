@@ -1,0 +1,129 @@
+package com.wakr.app.data
+
+import androidx.datastore.core.DataMigration
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.wakr.app.core.*
+import java.io.File
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.LocalTime
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+class WakeStoreTest {
+    @get:Rule val folder = TemporaryFolder()
+
+    private suspend fun open(
+        migrations: List<DataMigration<Preferences>>,
+        block: suspend (androidx.datastore.core.DataStore<Preferences>) -> Unit,
+    ) {
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val prefs = PreferenceDataStoreFactory.create(migrations = migrations, scope = scope) {
+            File(folder.root, "clock.preferences_pb")
+        }
+        try { block(prefs) } finally { scope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+
+    private val legacy = """[{"id":81,"time":23400,"days":[1,5],"label":"Early shift","enabled":false,"vibrate":false,"sound":"content://tone/81","snoozed":1234,"skippedOccurrence":321,"skippedDate":"2026-09-17"}]"""
+    private val original = Alarm(81, LocalTime.of(6, 30), "Early shift",
+        setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), false, false, "content://tone/81",
+        1234, 321, LocalDate.parse("2026-09-17"))
+
+    @Test fun vanillaFileUpgradesOnceAndRetainsOtherSettings() = runBlocking {
+        open(emptyList()) { prefs ->
+            prefs.edit {
+                it[stringPreferencesKey("alarms")] = legacy
+                it[stringPreferencesKey("cities")] = """[{"zone":"Asia/Kolkata","city":"Kolkata","region":"India"}]"""
+                it[stringPreferencesKey("timerPresetSeconds")] = "9,19,29,39"
+                it[longPreferencesKey("nextId")] = 132
+                it[intPreferencesKey("snooze")] = 7
+            }
+        }
+        repeat(2) { attempt ->
+            open(listOf(WakeMigration)) { prefs ->
+                val store = ClockStore(prefs)
+                assertFalse(WakeMigration.shouldMigrate(prefs.data.first()))
+                assertEquals(original, store.alarmsNow().single())
+                assertEquals("Asia/Kolkata", store.cities.first().single().zone.id)
+                assertEquals(listOf(9, 19, 29, 39), store.settingsNow().timers.presets)
+                assertEquals(7, store.settingsNow().alarms.snoozeMinutes)
+                assertEquals(132L + attempt, store.nextId())
+                assertTrue(store.wakeHistory.first().isEmpty())
+            }
+        }
+    }
+
+    @Test fun emptyVanillaAlarmListStaysEmptyAndNewInstallsKeepSeeds() = runBlocking {
+        open(listOf(WakeMigration)) { prefs ->
+            val store = ClockStore(prefs)
+            assertEquals(listOf(1L, 2L, 3L), store.alarmsNow().map { it.id })
+            store.putAlarms(emptyList())
+        }
+        open(listOf(WakeMigration)) { assertTrue(ClockStore(it).alarmsNow().isEmpty()) }
+    }
+
+    @Test fun missionOrderPolicyRegistrationAndHistorySurviveRestartAndDeletion() = runBlocking {
+        val code = ScanTarget(ScanKind.BARCODE, "00012345", "Kitchen")
+        val tag = ScanTarget(ScanKind.NFC, "00012345", "Desk")
+        val types = MissionType.entries.reversed()
+        val missions = types.mapIndexed { i, type ->
+            AlarmMission(50L + i, type, MissionDifficulty.HARD, 3, """{"mode":"test"}""",
+                when (type) { MissionType.QR -> code; MissionType.NFC -> tag; else -> null })
+        }
+        val options = WakeOptions(
+            scheduledDateEpochDay = 21_000, pausedUntilEpochDay = 20_009, timeZoneId = "Asia/Kolkata",
+            isLocked = true, difficulty = AlarmDifficulty.CUSTOM, soundMode = AlarmSoundMode.LOCAL_MUSIC,
+            musicUris = listOf("content://tracks/1", "content://tracks/2"), volumePercent = 80,
+            fadeInSeconds = 90, vibrationPattern = VibrationPattern.HEARTBEAT, flashEnabled = true,
+            voiceAnnounceEnabled = true, snoozeEnabled = false, snoozeDurationMin = 4, maxSnoozes = 2,
+            shakeToSnooze = true, silenceAfterMin = 0, repeatMissedCount = -1, reRingIntervalMin = 3,
+            deleteAfterDismiss = true, lockBeforeRingMin = 15, relaunchOnLeave = true, rebootSurvivalMax = 2,
+            stillAwakeChecksCount = 2, stillAwakeDelayMin = 8,
+        )
+        val alarm = original.copy(wake = options, missions = missions, createdAt = 1500)
+        val log = WakeUpLog(99, alarm.id, alarm.label, 3000, 3010, 3300, 1, null, false, WakeOutcome.DISMISSED)
+        open(listOf(WakeMigration)) { prefs ->
+            val store = ClockStore(prefs)
+            store.putAlarms(listOf(alarm))
+            store.registerTarget(code.copy(label = "Old name"))
+            store.registerTarget(code)
+            store.registerTarget(tag)
+            coroutineScope {
+                for (i in 0L..4L) launch(Dispatchers.Default) { store.putWakeLog(log.copy(id = log.id + i)) }
+            }
+            store.putWakeLog(log.copy(stillAwakePassed = false, outcome = WakeOutcome.STILL_AWAKE_FAILED))
+        }
+        open(listOf(WakeMigration)) { prefs ->
+            val store = ClockStore(prefs)
+            assertEquals(alarm, store.alarmsNow().single())
+            assertEquals(listOf(code, tag), store.scanTargets.first())
+            store.updateAlarms { it.map { a -> a.copy(missions = a.missions.reversed()) } }
+            assertEquals(missions.reversed(), store.alarmsNow().single().missions)
+            store.updateAlarms { list -> list.filterNot { it.id == alarm.id } }
+            assertTrue(store.alarmsNow().isEmpty())
+            val rows = store.wakeHistory.first()
+            assertEquals(5, rows.size)
+            assertEquals(log.copy(stillAwakePassed = false, outcome = WakeOutcome.STILL_AWAKE_FAILED),
+                rows.single { it.id == log.id })
+            assertEquals(log.copy(id = log.id + 1), rows.single { it.id == log.id + 1 })
+            store.clearWakeHistory()
+            assertTrue(store.wakeHistory.first().isEmpty())
+        }
+    }
+}

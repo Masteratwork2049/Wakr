@@ -1,0 +1,560 @@
+package com.wakr.app.data
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.wakr.app.core.Alarm
+import com.wakr.app.core.AlarmMission
+import com.wakr.app.core.ScanTarget
+import com.wakr.app.core.WakeOptions
+import com.wakr.app.core.WakeUpLog
+import com.wakr.app.core.ClockTimer
+import com.wakr.app.core.Lap
+import com.wakr.app.core.Stopwatch
+import com.wakr.app.core.TimerState
+import com.wakr.app.core.WorldCity
+import com.wakr.app.ui.theme.Palette
+import java.time.DayOfWeek
+import java.time.Duration
+import java.time.LocalTime
+import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
+
+private val Context.prefs: DataStore<Preferences> by preferencesDataStore(
+    name = "clock", produceMigrations = { listOf(WakeMigration) },
+)
+private const val TIMER_PRESET_SCHEMA_VERSION = 3
+
+/**
+ * Everything that has to survive the process.
+ *
+ * Preferences DataStore rather than Room: the whole dataset is a handful of alarms, a handful of
+ * cities and two dozen scalars, and none of it is queried; it is read once at start and written
+ * whole. A database would add a schema, a migration story and a code generator to store what fits
+ * in a few kilobytes of JSON.
+ *
+ * Alarms and cities are JSON *strings* inside the preference file, using `org.json`, which is in
+ * the platform. Adding kotlinx-serialization for two record types would be a plugin, a dependency
+ * and a compiler step to save about forty lines.
+ *
+ * Reads are cold flows. Writes are suspending and atomic per call, so a crash mid-write leaves the
+ * previous state rather than half of the new one. For the alarm list that is the difference between
+ * an alarm that does not ring and an alarm list that cannot be parsed.
+ */
+class ClockStore internal constructor(private val prefs: DataStore<Preferences>) {
+    constructor(context: Context) : this(context.applicationContext.prefs)
+
+    val settings: Flow<ClockSettings> = prefs.data.map { it.toSettings() }
+    val alarms: Flow<List<Alarm>> = prefs.data.map { it[KEY_ALARMS] }
+        .distinctUntilChanged()
+        .map { raw -> raw?.let(::parseAlarms) ?: SEED_ALARMS }
+        .flowOn(Dispatchers.Default)
+    val wakeHistory: Flow<List<WakeUpLog>> = prefs.data.map { it[KEY_HISTORY] }
+        .distinctUntilChanged()
+        .map { raw -> raw?.let { JSONArray(it).records(JSONObject::toWakeUpLog) }.orEmpty() }
+        .flowOn(Dispatchers.Default)
+    val scanTargets: Flow<List<ScanTarget>> = prefs.data.map { p ->
+        p[KEY_TARGETS]?.let { JSONArray(it).records(JSONObject::toScanTarget) }.orEmpty()
+    }
+
+    /** Reusing an occurrence ID updates the same history row, including after a retry. */
+    suspend fun putWakeLog(entry: WakeUpLog) {
+        prefs.edit { p ->
+            val rows = p[KEY_HISTORY]?.let { JSONArray(it).records(JSONObject::toWakeUpLog) }.orEmpty()
+            p[KEY_HISTORY] = jsonArray(rows.filterNot { it.id == entry.id } + entry, WakeUpLog::toJson).toString()
+        }
+    }
+
+    suspend fun clearWakeHistory() {
+        prefs.edit { it.remove(KEY_HISTORY) }
+    }
+
+    suspend fun registerTarget(target: ScanTarget) {
+        prefs.edit { p ->
+            val targets = p[KEY_TARGETS]?.let { JSONArray(it).records(JSONObject::toScanTarget) }.orEmpty()
+            val others = targets.filterNot { it.kind == target.kind && it.value == target.value }
+            p[KEY_TARGETS] = jsonArray(others + target, ScanTarget::toJson).toString()
+        }
+    }
+
+    val cities: Flow<List<WorldCity>> = prefs.data.map { p ->
+        p[KEY_CITIES]?.let(::parseCities) ?: SEED_CITIES
+    }
+    val timer: Flow<ClockTimer?> = prefs.data.map { p -> p[KEY_TIMER]?.let(::parseTimer) }
+    val stopwatch: Flow<Stopwatch> = prefs.data.map { p ->
+        p[KEY_STOPWATCH]?.let(::parseStopwatch) ?: Stopwatch()
+    }
+
+    /** A one-shot read, for the receivers and services that have no scope to collect in. */
+    suspend fun settingsNow(): ClockSettings = settings.first()
+    suspend fun alarmsNow(): List<Alarm> = alarms.first()
+    suspend fun timerNow(): ClockTimer? = timer.first()
+
+    suspend fun putAlarms(list: List<Alarm>) {
+        prefs.edit { it[KEY_ALARMS] = encodeAlarms(list) }
+    }
+
+    suspend fun updateAlarms(transform: (List<Alarm>) -> List<Alarm>): List<Alarm> {
+        var result = emptyList<Alarm>()
+        prefs.edit { p ->
+            result = transform(p[KEY_ALARMS]?.let(::parseAlarms) ?: SEED_ALARMS)
+            p[KEY_ALARMS] = encodeAlarms(result)
+        }
+        return result
+    }
+
+    suspend fun putCities(list: List<WorldCity>) {
+        prefs.edit { it[KEY_CITIES] = encodeCities(list) }
+    }
+
+    suspend fun updateCities(transform: (List<WorldCity>) -> List<WorldCity>) {
+        prefs.edit { p ->
+            val current = p[KEY_CITIES]?.let(::parseCities) ?: SEED_CITIES
+            p[KEY_CITIES] = encodeCities(transform(current).distinctBy { it.zone.id })
+        }
+    }
+
+    suspend fun putTimer(t: ClockTimer?) {
+        prefs.edit { p -> if (t == null) p.remove(KEY_TIMER) else p[KEY_TIMER] = encodeTimer(t) }
+    }
+
+    suspend fun putStopwatch(s: Stopwatch) {
+        prefs.edit { it[KEY_STOPWATCH] = encodeStopwatch(s) }
+    }
+
+    /** Monotonic ids, so a rescheduled alarm never collides with a PendingIntent request code. */
+    suspend fun nextId(): Long {
+        var out = 0L
+        prefs.edit { p ->
+            out = (p[KEY_NEXT_ID] ?: 100L)
+            p[KEY_NEXT_ID] = out + 1
+        }
+        return out
+    }
+
+    /* ── Widgets ────────────────────────────────────────────────────────────────────────── */
+
+    /**
+     * One key per widget id, not one blob holding them all.
+     *
+     * `DataStore.edit` is atomic per call but not across calls, and two config activities can be
+     * alive at once, whether that is two widgets dropped in quick succession or a reconfigure
+     * racing a pin callback. A shared map would lose the first write. Per-key also makes deletion
+     * a `remove` and the orphan sweep a prefix scan.
+     */
+    fun widgetConfig(id: Int): Flow<WidgetConfig?> =
+        prefs.data.map { p -> p[widgetKey(id)]?.let(::parseWidgetConfig) }
+
+    suspend fun widgetConfigNow(id: Int): WidgetConfig? = widgetConfig(id).first()
+
+    suspend fun putWidgetConfig(id: Int, config: WidgetConfig) {
+        prefs.edit { it[widgetKey(id)] = encodeWidgetConfig(config) }
+    }
+
+    /**
+     * Also the cancelled-add path: a host that never gets `RESULT_OK` deletes the id and sends
+     * `onDeleted`, so one cleanup site covers both and the two cases need not be told apart.
+     */
+    suspend fun deleteWidgetConfigs(ids: IntArray) {
+        prefs.edit { p -> ids.forEach { p.remove(widgetKey(it)) } }
+    }
+
+    /**
+     * Restore-from-backup remap. Every removal happens before any write, in one transaction,
+     * because an id may appear in both lists and a naive pairwise loop would delete what it just
+     * wrote.
+     */
+    suspend fun remapWidgetConfigs(old: IntArray, new: IntArray) {
+        prefs.edit { p ->
+            val carried = old.map { p[widgetKey(it)] }
+            old.forEach { p.remove(widgetKey(it)) }
+            carried.forEachIndexed { i, value ->
+                if (value != null && i < new.size) p[widgetKey(new[i])] = value
+            }
+        }
+    }
+
+    /** Safety net for records whose widget vanished without an `onDeleted` (a restore, a crash). */
+    suspend fun sweepWidgetConfigs(liveIds: IntArray) {
+        val live = liveIds.toHashSet()
+        prefs.edit { p ->
+            p.asMap().keys
+                .map { it.name }
+                .filter { it.startsWith(WIDGET_PREFIX) }
+                .filter { it.removePrefix(WIDGET_PREFIX).toIntOrNull() !in live }
+                .forEach { p.remove(stringPreferencesKey(it)) }
+        }
+    }
+
+    suspend fun update(block: (ClockSettings) -> ClockSettings) {
+        prefs.edit { p -> p.writeSettings(block(p.toSettings())) }
+    }
+
+    private companion object {
+        const val WIDGET_PREFIX = "widget:"
+        fun widgetKey(id: Int) = stringPreferencesKey("$WIDGET_PREFIX$id")
+
+        val KEY_ALARMS = stringPreferencesKey("alarms")
+        val KEY_TARGETS = stringPreferencesKey("wakeScanTargets")
+        val KEY_HISTORY = stringPreferencesKey("wakeHistory")
+        val KEY_CITIES = stringPreferencesKey("cities")
+        val KEY_TIMER = stringPreferencesKey("timer")
+        val KEY_STOPWATCH = stringPreferencesKey("stopwatch")
+        val KEY_NEXT_ID = longPreferencesKey("nextId")
+
+        val KEY_SILENCE = intPreferencesKey("silenceAfter")
+        val KEY_SNOOZE = intPreferencesKey("snooze")
+        val KEY_WEEK_START = stringPreferencesKey("weekStart")
+        val KEY_SECONDS = booleanPreferencesKey("showSeconds")
+        val KEY_HOUR_FORMAT = stringPreferencesKey("hourFormat")
+        val KEY_TIMER_SOUND = stringPreferencesKey("timerSound")
+        val KEY_TIMER_VIBRATE = booleanPreferencesKey("timerVibrate")
+        val KEY_TIMER_PRESETS = stringPreferencesKey("timerPresets")
+        val KEY_TIMER_PRESET_SECONDS = stringPreferencesKey("timerPresetSeconds")
+        val KEY_TIMER_PRESET_CUSTOM = booleanPreferencesKey("timerPresetCustom")
+        val KEY_TIMER_PRESET_SCHEMA = intPreferencesKey("timerPresetSchema")
+        val KEY_DYNAMIC = booleanPreferencesKey("dynamicColor")
+        val KEY_PALETTE = stringPreferencesKey("palette")
+        val KEY_DARK = stringPreferencesKey("darkMode")
+        val KEY_AMOLED = booleanPreferencesKey("amoled")
+
+        val SEED_ALARMS = listOf(
+            Alarm(1, LocalTime.of(6, 40), "Gym", setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY)),
+            Alarm(2, LocalTime.of(7, 15), "Work", Alarm.WEEKDAYS),
+            Alarm(3, LocalTime.of(8, 0), "Standup", setOf(DayOfWeek.TUESDAY, DayOfWeek.THURSDAY), enabled = false),
+        )
+
+        val SEED_CITIES = listOf(
+            WorldCity(ZoneId.of("America/Los_Angeles"), "San Francisco", "United States"),
+            WorldCity(ZoneId.of("Europe/London"), "London", "United Kingdom"),
+            WorldCity(ZoneId.of("Asia/Tokyo"), "Tokyo", "Japan"),
+        )
+    }
+}
+
+/* ── Settings ⇄ preferences ─────────────────────────────────────────────────────────────────── */
+
+internal fun Preferences.toSettings() = ClockSettings(
+    alarms = AlarmSettings(
+        silenceAfterMinutes = this[intPreferencesKey("silenceAfter")] ?: 10,
+        snoozeMinutes = this[intPreferencesKey("snooze")] ?: 10,
+        cards24Hour = this[booleanPreferencesKey("alarmCards24Hour")] ?: false,
+        weekStart = enumOr(this[stringPreferencesKey("weekStart")], WeekStart.SYSTEM),
+    ),
+    world = WorldClockSettings(
+        deleteTutorialShown = this[booleanPreferencesKey("worldDeleteTutorialShown")] ?: false,
+        showSeconds = this[booleanPreferencesKey("showSeconds")] ?: false,
+        hourFormat = enumOr(this[stringPreferencesKey("hourFormat")], HourFormat.SYSTEM),
+    ),
+    timers = TimerSettings(
+        soundUri = this[stringPreferencesKey("timerSound")],
+        vibrate = this[booleanPreferencesKey("timerVibrate")] ?: true,
+        presets = this[stringPreferencesKey("timerPresetSeconds")]
+            ?.split(",")
+            ?.mapNotNull { it.toIntOrNull() }
+            ?.takeIf { it.size == 4 }
+            ?: DEFAULT_TIMER_PRESETS,
+    ),
+    theme = ThemeSettings(
+        dynamicColor = this[booleanPreferencesKey("dynamicColor")] ?: true,
+        palette = enumOr(this[stringPreferencesKey("palette")], Palette.CONCEPT),
+        darkMode = enumOr(this[stringPreferencesKey("darkMode")], DarkMode.SYSTEM),
+        amoledBlack = this[booleanPreferencesKey("amoled")] ?: false,
+        dynamicIsland = this[booleanPreferencesKey("dynamicIsland")] ?: false,
+        overlayProfiles = IslandProfile.entries.associateWith { profile ->
+            fun value(field: String, legacy: String, fallback: Int) =
+                this[floatPreferencesKey("island_${profile.name}_${field}_dp")]
+                    ?: (this[intPreferencesKey("island_${profile.name}_$field")] ?: this[intPreferencesKey(legacy)] ?: fallback).toFloat()
+            IslandCalibration(value("x", "overlayOffsetX", FACTORY_OVERLAY_OFFSET_X),
+                value("y", "overlayOffsetY", FACTORY_OVERLAY_OFFSET_Y),
+                value("width", "overlayWidthOffset", FACTORY_OVERLAY_WIDTH_OFFSET),
+                value("height", "overlayHeightOffset", FACTORY_OVERLAY_HEIGHT_OFFSET),
+                enabled = this[booleanPreferencesKey("island_${profile.name}_enabled")] ?: true,
+                alignment = enumOr(this[stringPreferencesKey("island_${profile.name}_alignment")], IslandAlignment.CENTRE),
+                expandedPosition = enumOr(this[stringPreferencesKey("island_${profile.name}_expanded")], IslandExpandedPosition.OVERLAP_CUTOUT))
+        },
+        overlayOffsetX = this[intPreferencesKey("overlayOffsetX")] ?: FACTORY_OVERLAY_OFFSET_X,
+        overlayOffsetY = this[intPreferencesKey("overlayOffsetY")] ?: FACTORY_OVERLAY_OFFSET_Y,
+        overlayWidthOffset = this[intPreferencesKey("overlayWidthOffset")] ?: FACTORY_OVERLAY_WIDTH_OFFSET,
+        overlayHeightOffset = this[intPreferencesKey("overlayHeightOffset")] ?: FACTORY_OVERLAY_HEIGHT_OFFSET,
+    ),
+    defaultStartupPage = enumOr(this[stringPreferencesKey("defaultStartupPage")], DefaultStartupPage.ALARMS),
+    hasCompletedInitialSetup = this[booleanPreferencesKey("hasCompletedInitialSetup")] ?: false,
+)
+
+internal fun androidx.datastore.preferences.core.MutablePreferences.writeSettings(s: ClockSettings) {
+    this[booleanPreferencesKey("alarmCards24Hour")] = s.alarms.cards24Hour
+    this[intPreferencesKey("silenceAfter")] = s.alarms.silenceAfterMinutes
+    this[intPreferencesKey("snooze")] = s.alarms.snoozeMinutes
+    this[stringPreferencesKey("weekStart")] = s.alarms.weekStart.name
+    this[booleanPreferencesKey("showSeconds")] = s.world.showSeconds
+    this[booleanPreferencesKey("worldDeleteTutorialShown")] = s.world.deleteTutorialShown
+    this[stringPreferencesKey("hourFormat")] = s.world.hourFormat.name
+    s.timers.soundUri
+        ?.let { this[stringPreferencesKey("timerSound")] = it }
+        ?: remove(stringPreferencesKey("timerSound"))
+    this[booleanPreferencesKey("timerVibrate")] = s.timers.vibrate
+    this[intPreferencesKey("timerPresetSchema")] = TIMER_PRESET_SCHEMA_VERSION
+    this[booleanPreferencesKey("timerPresetCustom")] = true
+    this[stringPreferencesKey("timerPresetSeconds")] = s.timers.presets.joinToString(",")
+    this[booleanPreferencesKey("dynamicColor")] = s.theme.dynamicColor
+    this[stringPreferencesKey("palette")] = s.theme.palette.name
+    this[stringPreferencesKey("darkMode")] = s.theme.darkMode.name
+    this[booleanPreferencesKey("amoled")] = s.theme.amoledBlack
+    this[booleanPreferencesKey("dynamicIsland")] = s.theme.dynamicIsland
+    this[intPreferencesKey("overlayOffsetX")] = s.theme.overlayOffsetX
+    this[intPreferencesKey("overlayOffsetY")] = s.theme.overlayOffsetY
+    this[intPreferencesKey("overlayWidthOffset")] = s.theme.overlayWidthOffset
+    this[intPreferencesKey("overlayHeightOffset")] = s.theme.overlayHeightOffset
+    IslandProfile.entries.forEach { profile ->
+        val value = s.theme.calibration(profile)
+        this[floatPreferencesKey("island_${profile.name}_x_dp")] = value.x
+        this[floatPreferencesKey("island_${profile.name}_y_dp")] = value.y
+        this[floatPreferencesKey("island_${profile.name}_width_dp")] = value.width
+        this[floatPreferencesKey("island_${profile.name}_height_dp")] = value.height
+        this[booleanPreferencesKey("island_${profile.name}_enabled")] = value.enabled
+        this[stringPreferencesKey("island_${profile.name}_alignment")] = value.alignment.name
+        this[stringPreferencesKey("island_${profile.name}_expanded")] = value.expandedPosition.name
+    }
+    this[stringPreferencesKey("defaultStartupPage")] = s.defaultStartupPage.name
+    this[booleanPreferencesKey("hasCompletedInitialSetup")] = s.hasCompletedInitialSetup
+}
+
+/** Falls back rather than throwing: a preference file written by a newer build must not crash. */
+private inline fun <reified E : Enum<E>> enumOr(name: String?, fallback: E): E =
+    name?.let { runCatching { enumValueOf<E>(it) }.getOrNull() } ?: fallback
+
+/* ── JSON ───────────────────────────────────────────────────────────────────────────────────── */
+
+private fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
+    list.forEach { a ->
+        put(
+            JSONObject()
+                .put("id", a.id)
+                .put("wake", a.wake.toJson())
+                .put("missions", jsonArray(a.missions, AlarmMission::toJson))
+                .put("createdAt", a.createdAt)
+                .put("time", a.time.toSecondOfDay())
+                .put("label", a.label)
+                .put("days", JSONArray(a.days.map { it.value }))
+                .put("enabled", a.enabled)
+                .put("vibrate", a.vibrate)
+                .apply { a.soundUri?.let { put("sound", it) } }
+                .apply { a.snoozedUntilMillis?.let { put("snoozed", it) } }
+                .apply { a.skippedOccurrenceMillis?.let { put("skippedOccurrence", it) } }
+                .apply { a.skippedOccurrenceDate?.let { put("skippedDate", it.toString()) } }
+        )
+    }
+}.toString()
+
+private fun parseAlarms(s: String): List<Alarm> = runCatching {
+    JSONArray(s).records { o ->
+        val days = o.getJSONArray("days")
+        Alarm(
+            id = o.getLong("id"),
+            wake = o.optJSONObject("wake")?.toWakeOptions() ?: WakeOptions(),
+            missions = o.optJSONArray("missions")?.records(JSONObject::toMission).orEmpty(),
+            createdAt = o.longOrNull("createdAt"),
+            time = LocalTime.ofSecondOfDay(o.getLong("time")),
+            label = o.optString("label", ""),
+            days = (0 until days.length()).map { DayOfWeek.of(days.getInt(it)) }.toSet(),
+            enabled = o.optBoolean("enabled", true),
+            vibrate = o.optBoolean("vibrate", true),
+            soundUri = o.optString("sound").takeIf { it.isNotEmpty() },
+            snoozedUntilMillis = o.optLong("snoozed").takeIf { it > 0L },
+            skippedOccurrenceMillis = o.optLong("skippedOccurrence").takeIf { it > 0L },
+            skippedOccurrenceDate = runCatching { java.time.LocalDate.parse(o.optString("skippedDate")) }.getOrNull(),
+        )
+    }
+}.getOrDefault(emptyList())
+
+/* ── Widget config ⇄ JSON ───────────────────────────────────────────────────────────────── */
+
+private fun encodeWidgetConfig(c: WidgetConfig) = JSONObject()
+    .put("v", 1)
+    .put("type", c.type.name)
+    .put("digitalLayout", c.digitalLayout.name)
+    .put("digitalFont", c.digitalFont.name)
+    .put("digitalWeight", c.digitalWeight.name)
+    .put("showSeconds", c.showSeconds)
+    .put("digitalBg", c.digitalBackground.name)
+    .put("showDate", c.showDate)
+    .put("showDayOfWeek", c.showDayOfWeek)
+    .apply { c.digitalHourColor?.let { put("digHourCol", it) } }
+    .apply { c.digitalColonColor?.let { put("digColonCol", it) } }
+    .apply { c.digitalMinuteColor?.let { put("digMinCol", it) } }
+    .apply { c.digitalDayColor?.let { put("digDayCol", it) } }
+    .apply { c.digitalDateColor?.let { put("digDateCol", it) } }
+    .put("shape", c.shape.name)
+    .put("pill", c.pillOrientation.name)
+    .put("fit", c.fit.name)
+    .put("fill", c.faceFill.name)
+    .put("outline", c.outline.name)
+    .put("hour", c.hourHand.name)
+    .put("minute", c.minuteHand.name)
+    .put("second", c.secondHand.name)
+    .apply { c.analogSecondHandColor?.let { put("anSecHandCol", it) } }
+    .put("pin", c.centrePin)
+    .put("numerals", c.numerals.name)
+    .put("indices", c.indexSet.name)
+    .put("minor", c.minorIndices.name)
+    .put("analogFont", c.analogFont.name)
+    .put("analogWeight", c.analogWeight.name)
+    .put("numeralSize", c.numeralSize.name)
+    .put("numeralLayout", c.numeralLayout.name)
+    .put("numeralWidth", c.numeralWidth.name)
+    .put("numeralWeight", c.numeralWeight.name)
+    .put("numeralRound", c.numeralRound.name)
+    .put("date", c.date.name)
+    .put("datePos", c.datePosition.name)
+    .put("colour", c.colour.name)
+    .put("palette", c.palette.name)
+    .put("swatch", c.swatch.name)
+    .apply { c.analogPrimaryColor?.let { put("anPrimaryCol", it) } }
+    .toString()
+
+/**
+ * Never null and never throws.
+ *
+ * This is parsed inside a `BroadcastReceiver` with a ten-second deadline and no UI. A record from a
+ * newer build, or a truncated write, must come back as a plain working circle, because the
+ * alternative is a widget the user can neither see nor repair.
+ */
+private fun parseWidgetConfig(s: String): WidgetConfig = runCatching {
+    val o = JSONObject(s)
+    WidgetConfig(
+        type = enumOr(o.optString("type"), WidgetType.ANALOG),
+        digitalLayout = enumOr(o.optString("digitalLayout"), DigitalLayout.STACKED).let {
+            if (it == DigitalLayout.TIME_ONLY) DigitalLayout.HORIZONTAL else it
+        },
+        digitalFont = enumOr(o.optString("digitalFont"), WidgetFontFamily.GOOGLE_SANS),
+        digitalWeight = enumOr(
+            o.optString("digitalWeight"),
+            when (enumOr(o.optString("numeralWidth"), NumeralWidth.NORMAL)) {
+                NumeralWidth.CONDENSED -> DigitalTypefaceWeight.THIN
+                NumeralWidth.NORMAL -> DigitalTypefaceWeight.REGULAR
+                else -> DigitalTypefaceWeight.BOLD
+            },
+        ),
+        showSeconds = o.optBoolean("showSeconds", false),
+        digitalBackground = enumOr(o.optString("digitalBg"), DigitalBackground.FILLED),
+        showDate = o.optBoolean("showDate", true),
+        showDayOfWeek = o.optBoolean("showDayOfWeek", true),
+        digitalHourColor = o.optLong("digHourCol").takeIf { it != 0L },
+        digitalColonColor = o.optLong("digColonCol").takeIf { it != 0L },
+        digitalMinuteColor = o.optLong("digMinCol").takeIf { it != 0L },
+        digitalDayColor = o.optLong("digDayCol").takeIf { it != 0L },
+        digitalDateColor = o.optLong("digDateCol").takeIf { it != 0L },
+        shape = enumOr(o.optString("shape"), FaceShape.CIRCLE).let {
+            if (it == FaceShape.SQUARE_SHARP) FaceShape.ROUNDED_SQUARE else it
+        },
+        pillOrientation = enumOr(o.optString("pill"), PillOrientation.HORIZONTAL),
+        fit = enumOr(o.optString("fit"), FitMode.STRETCH),
+        faceFill = enumOr(o.optString("fill"), FaceFill.CONTAINER),
+        outline = enumOr(o.optString("outline"), OutlineStyle.NONE),
+        hourHand = enumOr(o.optString("hour"), HandStyle.BATON),
+        minuteHand = enumOr(o.optString("minute"), HandStyle.BATON),
+        secondHand = enumOr(o.optString("second"), HandStyle.OFF),
+        analogSecondHandColor = o.optLong("anSecHandCol").takeIf { it != 0L },
+        centrePin = o.optBoolean("pin", true),
+        numerals = enumOr(o.optString("numerals"), NumeralSystem.ARABIC),
+        indexSet = enumOr(o.optString("indices"), IndexSet.QUARTERS),
+        minorIndices = enumOr(o.optString("minor"), MinorIndex.NONE),
+        analogFont = enumOr(o.optString("analogFont"), WidgetFontFamily.GOOGLE_SANS),
+        analogWeight = enumOr(o.optString("analogWeight"), DigitalTypefaceWeight.REGULAR),
+        numeralSize = enumOr(o.optString("numeralSize"), NumeralSize.MEDIUM),
+        numeralLayout = enumOr(o.optString("numeralLayout"), NumeralLayout.CIRCLE_UPRIGHT),
+        numeralWidth = enumOr(o.optString("numeralWidth"), NumeralWidth.NORMAL),
+        numeralWeight = enumOr(o.optString("numeralWeight"), NumeralWeight.MEDIUM),
+        numeralRound = enumOr(o.optString("numeralRound"), NumeralRound.NONE),
+        date = enumOr(o.optString("date"), DateMode.NONE),
+        datePosition = enumOr(o.optString("datePos"), DatePosition.FOUR_THIRTY),
+        colour = enumOr(o.optString("colour"), ColourSource.FOLLOW_APP),
+        palette = enumOr(o.optString("palette"), Palette.CONCEPT),
+        swatch = enumOr(o.optString("swatch"), WidgetColorSwatch.BLUE),
+        analogPrimaryColor = o.optLong("anPrimaryCol").takeIf { it != 0L },
+    )
+}.getOrDefault(WidgetConfig())
+
+private fun encodeCities(list: List<WorldCity>) = JSONArray().apply {
+    list.forEach {
+        put(JSONObject().put("zone", it.zone.id).put("city", it.city).put("region", it.region))
+    }
+}.toString()
+
+private fun parseCities(s: String): List<WorldCity> = runCatching {
+    val arr = JSONArray(s)
+    (0 until arr.length()).mapNotNull { i ->
+        val o = arr.getJSONObject(i)
+        // A zone id can vanish between tzdb releases; drop the row rather than the whole list.
+        runCatching { WorldCity(ZoneId.of(o.getString("zone")), o.getString("city"), o.getString("region")) }
+            .getOrNull()
+    }
+}.getOrDefault(emptyList())
+
+private fun encodeTimer(t: ClockTimer) = JSONObject()
+    .put("id", t.id)
+    .put("label", t.label)
+    .put("total", t.total.toMillis())
+    .put("state", t.state.name)
+    .put("deadline", t.deadlineElapsedMillis)
+    .put("paused", t.pausedRemaining.toMillis())
+    .toString()
+
+private fun parseTimer(s: String): ClockTimer? = runCatching {
+    val o = JSONObject(s)
+    ClockTimer(
+        id = o.getLong("id"),
+        label = o.getString("label"),
+        total = Duration.ofMillis(o.getLong("total")),
+        state = enumOr(o.getString("state"), TimerState.IDLE),
+        deadlineElapsedMillis = o.getLong("deadline"),
+        pausedRemaining = Duration.ofMillis(o.getLong("paused")),
+    )
+}.getOrNull()
+
+private fun encodeStopwatch(s: Stopwatch) = JSONObject()
+    .put("running", s.running)
+    .put("startedAt", s.startedAtElapsed)
+    .put("accumulated", s.accumulated.toMillis())
+    .put(
+        "laps",
+        JSONArray().apply {
+            s.laps.forEach {
+                put(
+                    JSONObject().put("i", it.index)
+                        .put("split", it.split.toMillis())
+                        .put("total", it.total.toMillis())
+                )
+            }
+        }
+    )
+    .toString()
+
+private fun parseStopwatch(s: String): Stopwatch = runCatching {
+    val o = JSONObject(s)
+    val laps = o.getJSONArray("laps")
+    Stopwatch(
+        running = o.getBoolean("running"),
+        startedAtElapsed = o.getLong("startedAt"),
+        accumulated = Duration.ofMillis(o.getLong("accumulated")),
+        laps = (0 until laps.length()).map {
+            val l = laps.getJSONObject(it)
+            Lap(l.getInt("i"), Duration.ofMillis(l.getLong("split")), Duration.ofMillis(l.getLong("total")))
+        },
+    )
+}.getOrDefault(Stopwatch())
