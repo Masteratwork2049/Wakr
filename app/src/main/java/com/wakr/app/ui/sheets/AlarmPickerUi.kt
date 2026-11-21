@@ -43,6 +43,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.rotate
@@ -832,14 +838,25 @@ internal fun AlarmEditorSection(
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    val visibility = remember { MutableTransitionState(expanded) }
     val bringIntoView = remember { BringIntoViewRequester() }
+    var sectionSize by remember { mutableStateOf(IntSize.Zero) }
+    val leadingHeight = with(LocalDensity.current) { 196.dp.toPx() }
     val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "sectionChevron")
     val colors = MaterialTheme.colorScheme
-    LaunchedEffect(expanded) { if (expanded) bringIntoView.bringIntoView() }
+    SideEffect { visibility.targetState = expanded }
+    LaunchedEffect(expanded, leadingHeight) {
+        if (expanded) {
+            snapshotFlow { visibility.isIdle && visibility.currentState && sectionSize != IntSize.Zero }.first { it }
+            // Reveal the header and first controls without forcing a long expanded section on screen.
+            bringIntoView.bringIntoView(Rect(0f, 0f, sectionSize.width.toFloat(),
+                minOf(leadingHeight, sectionSize.height.toFloat())))
+        }
+    }
     Surface(Modifier.fillMaxWidth(), shape = AlarmCardShape, color = colors.surfaceContainerHigh,
         contentColor = colors.onSurface) {
-        Column {
-            Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+        Column(Modifier.bringIntoViewRequester(bringIntoView).onSizeChanged { sectionSize = it }) {
+            Row(Modifier.fillMaxWidth()
                 .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
                 .elasticClickable { expanded = !expanded }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -853,7 +870,7 @@ internal fun AlarmEditorSection(
                 }
                 Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.rotate(rotation), tint = colors.onSurfaceVariant)
             }
-            AnimatedVisibility(expanded) {
+            AnimatedVisibility(visibleState = visibility) {
                 Column {
                     AlarmOptionDivider()
                     content()
