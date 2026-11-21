@@ -3,9 +3,7 @@ package com.wakr.app.alarm
 import android.animation.ValueAnimator
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -16,9 +14,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
-import kotlin.math.abs
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -33,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -58,12 +55,13 @@ internal fun ringDirection(fraction: Float, snoozeAvailable: Boolean): RingDirec
 @Composable
 internal fun RingActionSlider(
     snoozeMinutes: Int,
-    onSnooze: (() -> Unit)?,
+    onSnooze: (suspend (Offset) -> Boolean)?,
     primaryText: String,
-    onPrimary: () -> Unit,
+    onPrimary: suspend (Offset) -> Boolean,
 ) {
     val colors = MaterialTheme.colorScheme
     val snoozeText = if (onSnooze == null) "Snooze unavailable" else "Snooze · $snoozeMinutes min"
+    var trackCenter by remember { mutableStateOf(Offset.Zero) }
     var fraction by remember { mutableFloatStateOf(0f) }
     var pressed by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
@@ -75,9 +73,10 @@ internal fun RingActionSlider(
     val primary by rememberUpdatedState(onPrimary)
     val direction by rememberUpdatedState(primaryText)
     val motion = ValueAnimator.areAnimatorsEnabled()
+    val spatialMotion = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
     val thumbScale by animateFloatAsState(
         targetValue = if (motion && (pressed || dragging)) .91f else 1f,
-        animationSpec = spring(stiffness = 550f, dampingRatio = .78f),
+        animationSpec = spatialMotion,
         label = "ringSliderPress",
     )
     val armed by remember(onSnooze != null) {
@@ -87,47 +86,49 @@ internal fun RingActionSlider(
         if (!motion) {
             fraction = 0f
         } else reset = scope.launch {
-            animate(fraction, 0f, animationSpec = spring(stiffness = 480f, dampingRatio = .82f)) { value, _ ->
+            animate(fraction, 0f, animationSpec = spatialMotion) { value, _ ->
                 fraction = value
             }
         }
     }
-    fun settle(target: RingDirection) {
-        if (committing || target == RingDirection.SNOOZE && snooze == null) return
-        committing = true
-        reset?.cancel()
-        scope.launch {
-            val edge = if (target == RingDirection.SNOOZE) -1f else 1f
-            if (motion) animate(fraction, edge, animationSpec = tween(130, easing = FastOutSlowInEasing)) { value, _ ->
-                fraction = value
-            } else fraction = edge
-            if (target == RingDirection.SNOOZE) snooze?.invoke() else primary()
-            committing = false
-            returnToCenter()
-        }
-    }
-    val settleAction by rememberUpdatedState<(RingDirection) -> Unit>(::settle)
     val resetAction by rememberUpdatedState<() -> Unit>(::returnToCenter)
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val travel = (maxWidth - 72.dp) / 2
+            val thumbWidth = 72.dp
+            val travel = (maxWidth - thumbWidth) / 2
             val pixels = with(androidx.compose.ui.platform.LocalDensity.current) { travel.toPx().coerceAtLeast(1f) }
+            fun settle(target: RingDirection, fromDrag: Boolean): Boolean {
+                val action = if (target == RingDirection.SNOOZE) snooze ?: return false else primary
+                if (committing) return false
+                val origin = trackCenter + Offset(if (fromDrag) pixels * fraction else 0f, 0f)
+                committing = true
+                reset?.cancel()
+                scope.launch {
+                    if (!action(origin)) {
+                        committing = false
+                        returnToCenter()
+                    }
+                }
+                return true
+            }
+            val settleDrag by rememberUpdatedState<(RingDirection) -> Boolean>({ settle(it, true) })
             Surface(
                 modifier = Modifier.fillMaxWidth()
+                    .onGloballyPositioned { trackCenter = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f)) }
                     .semantics(mergeDescendants = true) {
                         contentDescription = "Alarm slider"
                         stateDescription = "$snoozeText. $direction."
                         customActions = buildList {
-                            if (onSnooze != null) add(CustomAccessibilityAction(snoozeText) { settle(RingDirection.SNOOZE); true })
-                            add(CustomAccessibilityAction(primaryText) { settle(RingDirection.PRIMARY); true })
+                            if (onSnooze != null) add(CustomAccessibilityAction(snoozeText) { settle(RingDirection.SNOOZE, false) })
+                            add(CustomAccessibilityAction(primaryText) { settle(RingDirection.PRIMARY, false) })
                         }
                     }
                     .onKeyEvent { event ->
                         if (event.type != KeyEventType.KeyUp) false
                         else when (event.key) {
-                            Key.DirectionLeft -> if (snooze == null) false else { settle(RingDirection.SNOOZE); true }
-                            Key.DirectionRight, Key.Enter -> { settle(RingDirection.PRIMARY); true }
+                            Key.DirectionLeft -> if (snooze == null) false else { settle(RingDirection.SNOOZE, false) }
+                            Key.DirectionRight, Key.Enter -> { settle(RingDirection.PRIMARY, false) }
                             else -> false
                         }
                     }
@@ -157,7 +158,7 @@ internal fun RingActionSlider(
                                 if (dragging) {
                                     dragging = false
                                     val target = ringDirection(fraction, snooze != null)
-                                    if (target != null) settleAction(target) else resetAction()
+                                    if (target != null) settleDrag(target) else resetAction()
                                 }
                             },
                         ) { change, delta ->
@@ -173,17 +174,11 @@ internal fun RingActionSlider(
                 shape = CircleShape,
                 color = colors.surfaceContainerHighest,
             ) {
-                Box(Modifier.fillMaxWidth().heightIn(min = 76.dp).drawBehind {
-                    val position = fraction
-                    if (position > 0f || position < 0f && onSnooze != null) {
-                        drawRect(colors.primary.copy(alpha = abs(position) * .26f),
-                            topLeft = Offset(if (position > 0f) size.width / 2 else 0f, 0f),
-                            size = Size(size.width / 2, size.height))
-                    }
-                }, contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 72.dp), contentAlignment = Alignment.Center) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text(snoozeText, Modifier.weight(1f).clearAndSetSemantics {}, textAlign = TextAlign.Center,
+                        Text(snoozeText, Modifier.weight(1f).clearAndSetSemantics {}
+                            .graphicsLayer { alpha = 1f - (fraction / .7f).coerceIn(0f, 1f) }, textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.labelLarge,
                             color = when {
                                 onSnooze == null -> colors.outline
@@ -192,19 +187,21 @@ internal fun RingActionSlider(
                             },
                             fontWeight = if (armed == RingDirection.SNOOZE) androidx.compose.ui.text.font.FontWeight.Bold else null)
                         Spacer(Modifier.width(62.dp))
-                        Text(primaryText, Modifier.weight(1f).clearAndSetSemantics {}, textAlign = TextAlign.Center,
+                        Text(primaryText, Modifier.weight(1f).clearAndSetSemantics {}
+                            .graphicsLayer { alpha = 1f - (-fraction / .7f).coerceIn(0f, 1f) }, textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.labelLarge, color = colors.onSurface,
                             fontWeight = if (armed == RingDirection.PRIMARY) androidx.compose.ui.text.font.FontWeight.Bold else null)
                     }
-                    Surface(
-                        Modifier.size(56.dp).graphicsLayer {
-                            translationX = pixels * fraction
-                            scaleX = thumbScale
-                            scaleY = thumbScale
-                        },
-                        shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.SwapHoriz, null) }
+                    Box(Modifier.matchParentSize()) {
+                        Surface(
+                            Modifier.align(Alignment.Center).width(thumbWidth).fillMaxHeight().graphicsLayer {
+                                translationX = pixels * fraction
+                                scaleX = thumbScale
+                            },
+                            shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.SwapHoriz, null) }
+                        }
                     }
                 }
             }

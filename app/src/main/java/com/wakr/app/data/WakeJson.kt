@@ -35,6 +35,7 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("timeZoneId", timeZoneId)
     .put("isLocked", isLocked)
     .put("difficulty", difficulty.name)
+    .put("requireMissions", requireMissions)
     .put("soundMode", soundMode.name)
     .put("musicUris", JSONArray(musicUris))
     .put("volumePercent", volumePercent)
@@ -64,6 +65,7 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     timeZoneId = optString("timeZoneId").takeIf { !isNull("timeZoneId") && it.isNotEmpty() },
     isLocked = optBoolean("isLocked", false),
     difficulty = enum("difficulty", AlarmDifficulty.EASY),
+    requireMissions = opt("requireMissions") as? Boolean,
     soundMode = enum("soundMode", AlarmSoundMode.ONE),
     musicUris = optJSONArray("musicUris")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty(),
     volumePercent = optInt("volumePercent", 100),

@@ -38,6 +38,26 @@ class PhaseThreeAlarmTest {
         assertNull(complete.finishUserOccurrence(7, at, null)!!.ringingAt)
     }
 
+    @Test fun missionRequirementIsIndependentOfOtherDifficultySettings() {
+        val optional = ring.copy(wake = hard.copy(requireMissions = false))
+        assertFalse(optional.wake.needsMissions)
+        assertFalse(optional.canSnooze())
+        assertNull(optional.finishUserOccurrence(7, at, null)!!.ringingAt)
+
+        val required = ring.copy(wake = WakeOptions(requireMissions = true))
+        assertTrue(required.wake.needsMissions)
+        assertTrue(required.canSnooze())
+        assertSame(required, required.finishUserOccurrence(7, at, null))
+    }
+
+    @Test fun legacyCustomAlarmsOnlyRunMissionsWhenConfigured() {
+        val legacy = ring.copy(wake = WakeOptions(difficulty = AlarmDifficulty.CUSTOM))
+        assertFalse(legacy.wake.needsMissions)
+        assertSame(legacy, legacy.finishUserOccurrence(7, at, null))
+        val withoutMissions = legacy.copy(missions = emptyList())
+        assertNull(withoutMissions.finishUserOccurrence(7, at, null)!!.ringingAt)
+    }
+
     @Test fun emergencyOnlyStopsTheMatchingUnfinishedMission() {
         assertSame(ring, ring.finishEmergencyOccurrence(7, at - 1))
         val completed = ring.copy(missionIndex = ring.missions.size)

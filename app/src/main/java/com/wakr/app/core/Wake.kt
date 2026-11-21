@@ -49,6 +49,8 @@ data class WakeOptions(
     val rebootSurvivalMax: Int = 0,
     val stillAwakeChecksCount: Int = 0,
     val stillAwakeDelayMin: Int = 5,
+    // Null preserves the mission policy of alarms saved with a preset.
+    val requireMissions: Boolean? = null,
 )
 
 enum class WakeOutcome(val label: String) {

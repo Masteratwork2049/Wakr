@@ -377,6 +377,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                 } else {
                     TopAppBar(
                         title = {},
+                        expandedHeight = 80.dp,
                         actions = {
                             AlarmLayoutPill(
                                 visible = activeTab == Tab.ALARMS,

@@ -4,10 +4,11 @@ import java.time.ZonedDateTime
 import kotlin.random.Random
 
 internal fun WakeOptions.withDifficulty(preset: AlarmDifficulty): WakeOptions {
-    if (preset == AlarmDifficulty.CUSTOM) return copy(difficulty = preset)
+    if (preset == AlarmDifficulty.CUSTOM) return copy(requireMissions = null, difficulty = preset)
     val hard = preset == AlarmDifficulty.HARD || preset == AlarmDifficulty.NO_MERCY
     return copy(
         difficulty = preset,
+        requireMissions = null,
         snoozeEnabled = !hard,
         maxSnoozes = 3.takeIf { preset == AlarmDifficulty.NORMAL },
         silenceAfterMin = 0.takeUnless { preset == AlarmDifficulty.EASY },
@@ -19,10 +20,13 @@ internal fun WakeOptions.withDifficulty(preset: AlarmDifficulty): WakeOptions {
 }
 
 internal val WakeOptions.needsMissions: Boolean
-    get() = difficulty in setOf(AlarmDifficulty.NORMAL, AlarmDifficulty.HARD, AlarmDifficulty.NO_MERCY)
+    get() = requireMissions ?: (difficulty in setOf(AlarmDifficulty.NORMAL, AlarmDifficulty.HARD, AlarmDifficulty.NO_MERCY))
+
+internal val WakeOptions.runsMissions: Boolean
+    get() = requireMissions ?: (difficulty != AlarmDifficulty.EASY)
 
 internal val Alarm.ringMissions: List<AlarmMission>
-    get() = missions.takeUnless { wake.difficulty == AlarmDifficulty.EASY }.orEmpty()
+    get() = missions.takeIf { wake.runsMissions }.orEmpty()
 
 internal val Alarm.missionsRemaining: Boolean
     get() = missionIndex < maxOf(ringMissions.size, privateMissionCount)

@@ -33,19 +33,10 @@ internal val MissionDraftSaver = Saver<List<AlarmMission>, String>(
     restore = { JSONArray(it).records(JSONObject::toMission) },
 )
 
-internal val AlarmDifficulty.label get() = when (this) {
-    AlarmDifficulty.EASY -> "Easy"
-    AlarmDifficulty.NORMAL -> "Normal"
-    AlarmDifficulty.HARD -> "Hard"
-    AlarmDifficulty.NO_MERCY -> "No Mercy"
-    AlarmDifficulty.CUSTOM -> "Custom"
-}
-
 @Composable
 internal fun MissionOptions(
     wake: WakeOptions, missions: List<AlarmMission>,
     onWake: (WakeOptions) -> Unit, onMissions: (List<AlarmMission>) -> Unit,
-    separateDifficulty: Boolean = false,
     soundRows: (@Composable () -> Unit)? = null,
     scheduleRows: (@Composable () -> Unit)? = null,
 ) {
@@ -53,22 +44,16 @@ internal fun MissionOptions(
     var edit by remember { mutableStateOf<AlarmMission?>(null) }
     var preview by remember { mutableStateOf<AlarmMission?>(null) }
     var removed by remember { mutableStateOf<Pair<Int, AlarmMission>?>(null) }
-    if (separateDifficulty) {
-        Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            ChoiceRow("Difficulty", wake.difficulty, AlarmDifficulty.entries, { it.label }) { onWake(wake.withDifficulty(it)) }
-        }
-        Spacer(Modifier.height(12.dp))
-    }
+    DifficultyOptions(wake, missions.isNotEmpty(), onWake)
+    Spacer(Modifier.height(12.dp))
     val summary = when (missions.size) {
         0 -> "No missions"
         1 -> missions.single().type.title
         else -> "${missions.size} missions"
     }
     AlarmEditorSection("Wake-up missions", summary, Icons.Outlined.Psychology) {
-        if (!separateDifficulty) ChoiceRow("Difficulty", wake.difficulty, AlarmDifficulty.entries, { it.label }) { onWake(wake.withDifficulty(it)) }
-        if (wake.difficulty == AlarmDifficulty.EASY && missions.isNotEmpty()) {
-            Text("Choose Normal, Hard, No Mercy, or Custom to run these missions.",
+        if (!wake.runsMissions && missions.isNotEmpty()) {
+            Text("Turn on Require wake-up missions in Difficulty to use these missions.",
                 Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
         }
         missions.forEachIndexed { index, mission ->
@@ -127,7 +112,9 @@ internal fun MissionOptions(
         MissionEditor(mission, onClose = { edit = null }) { updated ->
             onMissions(if (missions.any { it.id == updated.id }) missions.map { if (it.id == updated.id) updated else it }
                 else missions + updated)
-            if (wake.difficulty == AlarmDifficulty.EASY) onWake(wake.withDifficulty(AlarmDifficulty.NORMAL))
+            if (missions.isEmpty() && wake.requireMissions == null && !wake.runsMissions) {
+                onWake(wake.copy(requireMissions = true))
+            }
             edit = null
         }
     }
@@ -193,7 +180,6 @@ private fun WakeBehaviorOptions(
     soundRows: (@Composable () -> Unit)?,
     scheduleRows: (@Composable () -> Unit)?,
 ) {
-    fun custom(options: WakeOptions) = save(options.copy(difficulty = AlarmDifficulty.CUSTOM))
     val context = LocalContext.current
     val audio = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
@@ -245,27 +231,47 @@ private fun WakeBehaviorOptions(
         AlarmOptionSwitchRow("Voice and screen light", Icons.Outlined.RecordVoiceOver, wake.voiceAnnounceEnabled) { save(wake.copy(voiceAnnounceEnabled = it)) }
     }
     Spacer(Modifier.height(12.dp))
-    val snoozeSummary = if (!wake.snoozeEnabled) "Off" else
-        (wake.snoozeDurationMin?.let { "$it min" } ?: "App duration") + " · " +
-            (wake.maxSnoozes?.let { "up to $it times" } ?: "unlimited")
+    val snoozeSummary = if (!wake.snoozeEnabled) "Off in Difficulty" else
+        wake.snoozeDurationMin?.let { "$it min" } ?: "App duration"
     AlarmEditorSection("Snooze", snoozeSummary, Icons.Outlined.Snooze) {
-        AlarmOptionSwitchRow("Snooze", Icons.Outlined.Snooze, wake.snoozeEnabled) { custom(wake.copy(snoozeEnabled = it)) }
         if (wake.snoozeEnabled) {
-            NumberChoice("Snooze duration", wake.snoozeDurationMin ?: 0, (0..30).toList(), { if (it == 0) "App default" else "$it min" }) { custom(wake.copy(snoozeDurationMin = it.takeIf { n -> n > 0 })) }
-            NumberChoice("Snooze limit", wake.maxSnoozes ?: 0, (0..10).toList(), { if (it == 0) "Unlimited" else it.toString() }) { custom(wake.copy(maxSnoozes = it.takeIf { n -> n > 0 })) }
-            AlarmOptionSwitchRow("Shake to snooze", Icons.Outlined.Vibration, wake.shakeToSnooze) { custom(wake.copy(shakeToSnooze = it)) }
+            NumberChoice("Snooze duration", wake.snoozeDurationMin ?: 0, (0..30).toList(), { if (it == 0) "App default" else "$it min" }) { save(wake.copy(snoozeDurationMin = it.takeIf { n -> n > 0 })) }
+            AlarmOptionSwitchRow("Shake to snooze", Icons.Outlined.Vibration, wake.shakeToSnooze) { save(wake.copy(shakeToSnooze = it)) }
         }
     }
     Spacer(Modifier.height(12.dp))
-    val scheduleSummary = listOfNotNull(wake.timeZoneId ?: "Device time zone",
-        wake.lockBeforeRingMin.takeIf { it > 0 }?.let { "$it min pre-ring lock" }).joinToString(" · ")
+    val scheduleSummary = wake.timeZoneId ?: "Device time zone"
     AlarmEditorSection("Scheduling and protection", scheduleSummary, Icons.Outlined.Tune) {
         scheduleRows?.invoke()
-        NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), { if (it == 0) "Off" else "$it min" }) { custom(wake.copy(lockBeforeRingMin = it)) }
-        AlarmOptionSwitchRow("Re-launch if left", Icons.Outlined.NotificationsActive, wake.relaunchOnLeave) { custom(wake.copy(relaunchOnLeave = it)) }
-        NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) { custom(wake.copy(rebootSurvivalMax = it)) }
-        NumberChoice("Still-awake checks", wake.stillAwakeChecksCount, (0..2).toList(), { if (it == 0) "Off" else it.toString() }) { custom(wake.copy(stillAwakeChecksCount = it)) }
-        if (wake.stillAwakeChecksCount > 0) NumberChoice("Still-awake delay", wake.stillAwakeDelayMin, (3..15).toList(), { "$it min" }) { custom(wake.copy(stillAwakeDelayMin = it)) }
+    }
+}
+
+@Composable
+private fun DifficultyOptions(wake: WakeOptions, hasMissions: Boolean, save: (WakeOptions) -> Unit) {
+    val missionsRequired = wake.needsMissions || (hasMissions && wake.runsMissions)
+    val missionSummary = if (missionsRequired) "Mission required" else "Swipe to dismiss"
+    val snoozeSummary = when {
+        !wake.snoozeEnabled -> "No snooze"
+        wake.maxSnoozes == null -> "Unlimited snooze"
+        else -> "Up to ${wake.maxSnoozes} snoozes"
+    }
+    AlarmEditorSection("Difficulty", "$missionSummary · $snoozeSummary", Icons.Outlined.Tune) {
+        AlarmOptionSwitchRow("Require wake-up missions", Icons.Outlined.Psychology, missionsRequired) {
+            save(wake.copy(requireMissions = it))
+        }
+        AlarmOptionSwitchRow("Allow snooze", Icons.Outlined.Snooze, wake.snoozeEnabled) { save(wake.copy(snoozeEnabled = it)) }
+        if (wake.snoozeEnabled) {
+            NumberChoice("Snooze limit", wake.maxSnoozes ?: 0, (0..10).toList(), { if (it == 0) "Unlimited" else it.toString() }) { save(wake.copy(maxSnoozes = it.takeIf { n -> n > 0 })) }
+        }
+        NumberChoice("Silence after", wake.silenceAfterMin ?: -1, (-1..60).toList(),
+            { if (it < 0) "App default" else if (it == 0) "Never" else "$it min" }) {
+            save(wake.copy(silenceAfterMin = it.takeIf { minutes -> minutes >= 0 }))
+        }
+        NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), { if (it == 0) "Off" else "$it min" }) { save(wake.copy(lockBeforeRingMin = it)) }
+        AlarmOptionSwitchRow("Re-launch if left", Icons.Outlined.NotificationsActive, wake.relaunchOnLeave) { save(wake.copy(relaunchOnLeave = it)) }
+        NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) { save(wake.copy(rebootSurvivalMax = it)) }
+        NumberChoice("Still-awake checks", wake.stillAwakeChecksCount, (0..2).toList(), { if (it == 0) "Off" else it.toString() }) { save(wake.copy(stillAwakeChecksCount = it)) }
+        if (wake.stillAwakeChecksCount > 0) NumberChoice("Still-awake delay", wake.stillAwakeDelayMin, (3..15).toList(), { "$it min" }) { save(wake.copy(stillAwakeDelayMin = it)) }
     }
 }
 

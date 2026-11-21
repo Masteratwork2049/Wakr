@@ -243,7 +243,7 @@ fun AlarmPickerSheetContent(
         }
 
         }
-        if (!canSave) Text("Add a wake-up mission to use this difficulty.",
+        if (!canSave) Text("Add a wake-up mission or turn off Require wake-up missions in Difficulty.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         CompositionLocalProvider(LocalBringIntoViewSpec provides AlarmNameBringIntoViewSpec) {
         val bodyScroll = rememberScrollState()
@@ -355,11 +355,10 @@ fun AlarmPickerSheetContent(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            MissionOptions(wake, missions, setWake, onMissions, separateDifficulty = true,
+            MissionOptions(wake, missions, setWake, onMissions,
                 soundRows = {
                     AlarmOptionRow("Sound", Icons.Outlined.MusicNote, soundLabel, onClick = onSoundClick)
                     AlarmOptionSwitchRow("Vibration", Icons.Outlined.Vibration, vibrate, onVibrateChange)
-                    if (days.isEmpty()) AutoDeleteRow(wake, setWake)
                 },
                 scheduleRows = {
                     AlarmSchedulingOptions(wake, days.isEmpty(), true, effectiveHour, minute, false,

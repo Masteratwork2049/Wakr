@@ -27,11 +27,14 @@ internal fun NextAlarmDetails(
     }
     val ink = MaterialTheme.colorScheme.onPrimaryContainer
     if (next != null) {
-        val difficulty = next.alarm.wake.difficulty.name.lowercase().replace('_', ' ')
         val day = if (next.at.toLocalDate() == now.toLocalDate().plusDays(1)) " · Tomorrow" else ""
-        val missions = next.alarm.missions.size
-        val missionText = if (missions > 0) " · $missions missions" else ""
-        Text("In " + humanUntil(now, next.at) + day + " · " + difficulty.replaceFirstChar(Char::uppercase) + missionText,
+        val missions = next.alarm.ringMissions.size
+        val missionText = when (missions) {
+            0 -> ""
+            1 -> " · 1 mission"
+            else -> " · $missions missions"
+        }
+        Text("In " + humanUntil(now, next.at) + day + missionText,
             color = ink, style = MaterialTheme.typography.labelLarge)
     }
     if (low) Text("Battery below 20% and unplugged", color = ink)

@@ -78,6 +78,13 @@ class WakeStoreTest {
         open(listOf(WakeMigration)) { assertTrue(ClockStore(it).alarmsNow().isEmpty()) }
     }
 
+    @Test fun missionRequirementPreservesBothExplicitStatesAndLegacyDefault() {
+        for (requirement in listOf(null, false, true)) {
+            val options = WakeOptions(difficulty = AlarmDifficulty.NORMAL, requireMissions = requirement)
+            assertEquals(options, options.toJson().toWakeOptions())
+        }
+    }
+
     @Test fun missionOrderPolicyRegistrationAndHistorySurviveRestartAndDeletion() = runBlocking {
         val code = ScanTarget(ScanKind.BARCODE, "00012345", "Kitchen")
         val tag = ScanTarget(ScanKind.NFC, "00012345", "Desk")

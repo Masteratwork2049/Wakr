@@ -8,7 +8,6 @@ import com.wakr.app.core.withAddedSeconds
 import com.wakr.app.core.ClockTimer
 import com.wakr.app.core.finishUserOccurrence
 import com.wakr.app.core.finishEmergencyOccurrence
-import com.wakr.app.core.WakeOutcome
 import com.wakr.app.core.Alarm
 import com.wakr.app.core.Lap
 import com.wakr.app.core.Stopwatch
@@ -59,29 +58,6 @@ class ClockActionReceiver : BroadcastReceiver() {
                 pending.finish()
             }
         }
-    }
-
-    private suspend fun finishRing(context: Context, id: Long, at: Long, action: String) {
-        val snooze = action == ACTION_SNOOZE
-        val emergency = action == ACTION_EMERGENCY
-        val fallback = RuntimeAlarms.settings(context).alarms.snoozeMinutes
-        val now = System.currentTimeMillis()
-        var handled: Alarm? = null
-        val updated = RuntimeAlarms.update(context) { alarms -> alarms.mapNotNull { alarm ->
-            if (alarm.id != id || alarm.ringingAt != at) return@mapNotNull alarm
-            val due = now + (alarm.wake.snoozeDurationMin ?: fallback).coerceIn(1, 30) * 60_000L
-            val result = if (emergency) alarm.finishEmergencyOccurrence(id, at)
-                else alarm.finishUserOccurrence(id, at, due.takeIf { snooze })
-            if (result !== alarm) handled = alarm
-            result
-        } }
-        val previous = handled ?: return
-        AlarmService.stopOccurrence(id, at)
-        val retained = updated.firstOrNull { it.id == id }
-        if (retained == null) AlarmScheduler.cancel(context, id) else AlarmScheduler.schedule(context, retained)
-        if (emergency) {
-            WakeChecks.recordEmergency(context, previous, at, now)
-        } else if (!snooze) WakeChecks.onDismissed(context, previous, at, now)
     }
 
     private suspend fun timerToggle(context: Context, store: ClockStore) {
@@ -136,3 +112,32 @@ class ClockActionReceiver : BroadcastReceiver() {
         const val ACTION_SW_RESET = "com.wakr.app.SW_RESET"
     }
 }
+
+internal data class RingActionReceipt(val snoozeMinutes: Int?)
+
+internal suspend fun finishRing(context: Context, id: Long, at: Long, action: String): RingActionReceipt? {
+    val snooze = action == ClockActionReceiver.ACTION_SNOOZE
+    val emergency = action == ClockActionReceiver.ACTION_EMERGENCY
+    val fallback = RuntimeAlarms.settings(context).alarms.snoozeMinutes
+    val now = System.currentTimeMillis()
+    var handled: Alarm? = null
+    val updated = RuntimeAlarms.update(context) { alarms -> alarms.mapNotNull { alarm ->
+        if (alarm.id != id || alarm.ringingAt != at) return@mapNotNull alarm
+        val due = now + alarm.snoozeMinutes(fallback) * 60_000L
+        val result = if (emergency) alarm.finishEmergencyOccurrence(id, at)
+            else alarm.finishUserOccurrence(id, at, due.takeIf { snooze })
+        if (result !== alarm) handled = alarm
+        result
+    } }
+    val previous = handled ?: return null
+    AlarmService.stopOccurrence(id, at)
+    val retained = updated.firstOrNull { it.id == id }
+    if (retained == null) AlarmScheduler.cancel(context, id) else AlarmScheduler.schedule(context, retained)
+    if (emergency) {
+        WakeChecks.recordEmergency(context, previous, at, now)
+    } else if (!snooze) WakeChecks.onDismissed(context, previous, at, now)
+    return RingActionReceipt(previous.snoozeMinutes(fallback).takeIf { snooze })
+}
+
+internal fun Alarm.snoozeMinutes(fallback: Int): Int =
+    (wake.snoozeDurationMin ?: fallback).coerceIn(1, 30)

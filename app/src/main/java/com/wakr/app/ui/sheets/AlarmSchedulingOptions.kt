@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import com.wakr.app.data.toJson
 import com.wakr.app.data.toWakeOptions
 import com.wakr.app.core.WakeOptions
-import com.wakr.app.core.needsMissions
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -49,13 +48,6 @@ internal fun WakeOptions.forAlarmSave(days: Set<java.time.DayOfWeek>, time: Loca
 internal enum class AlarmSchedulePart { ALL, BASICS, SCHEDULE }
 
 @Composable
-internal fun AutoDeleteRow(wake: WakeOptions, setWake: (WakeOptions) -> Unit) {
-    AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
-        setWake(wake.copy(deleteAfterDismiss = it))
-    }
-}
-
-@Composable
 internal fun AlarmSchedulingOptions(
     wake: WakeOptions, once: Boolean, editing: Boolean, hour: Int, minute: Int, initialRelative: Boolean,
     setTime: (LocalTime) -> Unit, setWake: (WakeOptions) -> Unit,
@@ -64,7 +56,6 @@ internal fun AlarmSchedulingOptions(
 ) {
     var dialog by rememberSaveable { mutableStateOf(if (initialRelative) "Alarm in…" else "") }
     val zone = wake.timeZoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
-    if (once && part == AlarmSchedulePart.ALL) AutoDeleteRow(wake, setWake)
     if (part != AlarmSchedulePart.SCHEDULE) {
         AlarmOptionRow("Type time", Icons.Outlined.Edit) { dialog = "Type time" }
         if (!editing) {
@@ -73,13 +64,18 @@ internal fun AlarmSchedulingOptions(
         }
         AlarmOptionDivider()
         AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
+        if (once) {
+            AlarmOptionDivider()
+            AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
+                setWake(wake.copy(deleteAfterDismiss = it))
+            }
+        }
     }
     if (part != AlarmSchedulePart.BASICS) {
         if (once) {
             AlarmOptionRow("Schedule alarm", Icons.Outlined.CalendarMonth, wake.scheduledDateEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Next occurrence") { dialog = "Schedule alarm" }
         } else AlarmOptionRow("Pause until", Icons.Outlined.CalendarMonth, wake.pausedUntilEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Off") { dialog = "Pause until" }
         AlarmOptionRow("Time zone", Icons.Outlined.Language, wake.timeZoneId ?: "Device time zone") { dialog = "Time zone" }
-        AlarmOptionRow("Silence after", Icons.Outlined.Timer, wake.silenceAfterMin?.let { if (it == 0) "Never" else "$it min" } ?: "App default") { dialog = "Silence after" }
         AlarmOptionRow("Repeat missed alarm", Icons.Outlined.Repeat, missedAlarmCountLabel(wake.repeatMissedCount)) { dialog = "Repeat missed alarm" }
         if (wake.repeatMissedCount != 0) AlarmOptionRow("Repeat interval", Icons.Outlined.Snooze, "${wake.reRingIntervalMin} min") { dialog = "Repeat interval" }
         val context = androidx.compose.ui.platform.LocalContext.current
@@ -141,7 +137,6 @@ internal fun AlarmSchedulingOptions(
     val choices = remember(dialog) { when (dialog) {
         "Repeat" -> listOf("Once", "Weekdays", "Weekends", "Every day")
         "Time zone" -> listOf("Device time zone") + ZoneId.getAvailableZoneIds().sorted()
-        "Silence after" -> listOf("App default", "Never") + (1..60).map(Int::toString)
         "Repeat interval" -> (1..60).map(Int::toString)
         else -> listOf("Off", "1", "2", "3", "4", "5", "Indefinitely")
     } }
@@ -159,10 +154,6 @@ internal fun AlarmSchedulingOptions(
                                 "Weekends" -> com.wakr.app.core.Alarm.WEEKENDS
                                 else -> java.time.DayOfWeek.entries.toSet()
                             })
-                            "Silence after" -> setWake(wake.copy(
-                                difficulty = if (wake.needsMissions) com.wakr.app.core.AlarmDifficulty.CUSTOM else wake.difficulty,
-                                silenceAfterMin = if (value == "Never") 0 else value.toIntOrNull(),
-                            ))
                             "Repeat interval" -> setWake(wake.copy(reRingIntervalMin = value.toInt()))
                             else -> setWake(wake.copy(repeatMissedCount = if (value == "Indefinitely") -1 else value.toIntOrNull() ?: 0))
                         }
