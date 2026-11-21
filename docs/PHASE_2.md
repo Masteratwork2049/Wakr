@@ -1,6 +1,6 @@
 # Phase 2 · Alarm engine and scheduling
 
-Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, and the ringing flow. Keep the Next alarm card, low-battery feedback, and Pause all on Morning. Add the Alarm in… picker, and typed time entry. Add scheduling, pause-until, time zone, flash, missed-alarm repeats, lock, and duplication to the existing Edit alarm sheet.
+Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, and the ringing flow. Keep the Next alarm card, low-battery feedback, and Pause all on Morning. Keep elastic press feedback on the card without a glow. Add the Alarm in… picker, and typed time entry. Add scheduling, pause-until, time zone, flash, missed-alarm repeats, lock, and duplication to the existing Edit alarm sheet.
 
 ## Temporary alarms
 
@@ -13,13 +13,13 @@ Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, a
 
 - Show **Type time**, **Alarm in…** for new alarms, and the scheduling controls inline with Sound and Vibration in the editor. Make the full width of the **Silence after** and **Repeat missed alarm** pickers swipeable.
 - Place a **Duplicate alarm** pill beneath the alarm name field. Require pressing and holding **Unlock** before editing a locked alarm.
-- Show saved names on alarm cards above status tags. Offer persistent **Grid** and **List** layouts on Alarms and in Settings. Add **Select all** to the alarm selection toolbar. Keep locked alarms protected in bulk deletion.
+- Show saved names on alarm cards above status tags. Offer persistent **Grid** and **List** layouts on Alarms and in Settings. Long-press an alarm to select it immediately. Offer **Select all** and **Duplicate** icons in the selection toolbar, with **Duplicate** immediately before **Delete**. Keep locked alarms protected in bulk deletion.
 - Show the existing default silence duration and a new default for missed-alarm repeats in Alarm Settings. New alarms start with the chosen retry count and use the app silence duration unless overridden.
 
 ## Phase 2 UI refinements
 
-- Extend **Duplicate alarm** to the full width of the editor beneath **Alarm Name** and add a copy icon with two overlapping rounded rectangles on the left. The editor and the alarm-card action menu preserve the original alarm’s on/off state. The copy has its own identity and schedule.
-- In List view, align the time on the left, place AM or PM immediately after it in 12-hour mode, and put the alarm name to the right. Place smaller weekday letters directly below the larger time. In Grid view, center the name and any status tag in the space above the time.
+- Extend **Duplicate alarm** to the full width of the editor beneath **Alarm Name** and add a copy icon with two overlapping rounded rectangles on the left. The editor and the selection toolbar preserve the original alarm’s on/off state. The copy has its own identity and schedule.
+- In List view, align the time on the left, place AM or PM immediately after it in 12-hour mode, and put the alarm name to the right. Make list rows about 30% taller and align the weekday letters to the first and last time digits. In Grid view, center the name and any status tag in the space above the time.
 - Use the same layout for all alarm option rows, with an on/off switch on the right for **Flash** and **Auto-delete after dismissal**. Place **Auto-delete after dismissal** directly below **Vibration** and **Flash** directly above **Lock alarm** when those options are available. Use a pill for the **Grid view** and **List view** control beside Settings.
 - Tap the selected hour or minute to open the numeric keyboard. Keep swipe-to-scroll on both wheels and validate the number against the active time format.
 

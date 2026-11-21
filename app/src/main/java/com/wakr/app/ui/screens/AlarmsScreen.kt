@@ -74,6 +74,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -105,6 +106,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -116,6 +119,10 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -227,14 +234,13 @@ fun AlarmsScreen(
     contentPadding: PaddingValues,
     onAddAlarm: (() -> Unit)? = null,
     listLayout: Boolean = false,
-    onDuplicate: (Alarm) -> Unit = {},
-    onSkip: (Long) -> Unit = {},
-    onLock: (Alarm) -> Unit = {},
+    onDuplicate: (List<Alarm>) -> Unit = {},
     onDeleteAlarms: ((Set<Long>) -> Unit)? = null,
     onSelectionCountChange: ((Int) -> Unit)? = null,
     clearSelectionSignal: Int = 0,
     deleteClickSignal: Int = 0,
     selectAllSignal: Int = 0,
+    duplicateSignal: Int = 0,
     editingAlarm: Alarm? = null,
     modifier: Modifier = Modifier,
     widePane: Boolean = false,
@@ -270,7 +276,6 @@ fun AlarmsScreen(
     var displayedAlarms by remember { mutableStateOf(alarms) }
     var exitingAlarmIds by remember { mutableStateOf(emptySet<Long>()) }
 
-    var actionAlarm by remember { mutableStateOf<Alarm?>(null) }
     var selectedIds by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     val inSelectionMode = selectedIds.isNotEmpty()
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
@@ -296,6 +301,15 @@ fun AlarmsScreen(
         if (handledSelectAll != selectAllSignal) {
             handledSelectAll = selectAllSignal
             selectedIds = alarms.mapTo(mutableSetOf()) { it.id }
+        }
+    }
+
+    var handledDuplicate by remember { mutableIntStateOf(duplicateSignal) }
+    LaunchedEffect(duplicateSignal) {
+        if (handledDuplicate != duplicateSignal && selectedIds.isNotEmpty()) {
+            handledDuplicate = duplicateSignal
+            onDuplicate(alarms.filter { it.id in selectedIds })
+            selectedIds = emptySet()
         }
     }
 
@@ -440,9 +454,6 @@ fun AlarmsScreen(
                                             selectedIds + alarm.id
                                         }
                                     },
-                                    onStartSelection = {
-                                        if (alarm.wake.isLocked) onEdit(alarm) else actionAlarm = alarm
-                                    },
                                 )
                             }
                         }
@@ -452,20 +463,6 @@ fun AlarmsScreen(
             }
         }
 
-    actionAlarm?.let { alarm ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { actionAlarm = null },
-            title = { Text(alarm.label.ifBlank { "Alarm actions" }) },
-            text = { Column {
-                com.wakr.app.ui.sheets.NavigateRow("Duplicate", null) { onDuplicate(alarm); actionAlarm = null }
-                if (alarm.nextFire(java.time.ZonedDateTime.now()) != null)
-                    com.wakr.app.ui.sheets.NavigateRow("Skip next occurrence", null) { onSkip(alarm.id); actionAlarm = null }
-                com.wakr.app.ui.sheets.NavigateRow("Lock alarm", null) { onLock(alarm); actionAlarm = null }
-                com.wakr.app.ui.sheets.NavigateRow("Select alarms", null) { selectedIds = setOf(alarm.id); actionAlarm = null }
-                com.wakr.app.ui.sheets.NavigateRow("Delete", null) {
-                    selectedIds = setOf(alarm.id); showDeleteConfirmSheet = true; actionAlarm = null
-                }
-            } }, confirmButton = { androidx.compose.material3.TextButton(onClick = { actionAlarm = null }) { Text("Close") } })
-    }
     if (showDeleteConfirmSheet) {
         val deletableIds = alarms.filter { it.id in selectedIds && !it.wake.isLocked }.mapTo(mutableSetOf()) { it.id }
         val lockedCount = alarms.count { it.id in selectedIds && it.wake.isLocked }
@@ -498,6 +495,7 @@ internal fun InlineAlarmEditorPanel(
     onSave: (Alarm) -> Unit,
     onCancel: () -> Unit,
     onDelete: (Long) -> Unit,
+    onSkip: ((Long) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
@@ -571,6 +569,8 @@ internal fun InlineAlarmEditorPanel(
                 ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
                 onSave(alarmToSave)
             },
+            onSkip = onSkip?.takeIf { editingAlarm?.nextFire(java.time.ZonedDateTime.now()) != null }
+                ?.let { skip -> { editingAlarm?.let { skip(it.id) } } },
             onDelete = {
                 if (editingAlarm != null && editingAlarm.id != 0L) {
                     onDelete(editingAlarm.id)
@@ -788,7 +788,6 @@ private fun AlarmTile(
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     onToggleSelect: () -> Unit = {},
-    onStartSelection: () -> Unit = {},
 ) {
     val view = LocalView.current
     val windowExpanded = LocalAppWindowSizeInfo.current.isExpanded
@@ -884,11 +883,7 @@ private fun AlarmTile(
                 },
                 onLongClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    if (inSelectionMode) {
-                        onToggleSelect()
-                    } else {
-                        onStartSelection()
-                    }
+                    onToggleSelect()
                 },
             )
             .clearAndSetSemantics {
@@ -902,7 +897,7 @@ private fun AlarmTile(
                     append(", double tap to edit")
                 }
                 onClick(label = "Edit alarm") { if (inSelectionMode) onToggleSelect() else onEdit(); true }
-                onLongClick(label = "Alarm actions") { onStartSelection(); true }
+                onLongClick(label = if (selected) "Deselect alarm" else "Select alarm") { onToggleSelect(); true }
             },
     ) {
             val toggle: @Composable () -> Unit = {
@@ -1006,22 +1001,14 @@ private fun AlarmListRow(
     weight: Int,
     toggle: @Composable () -> Unit,
 ) {
-    val timeCap = 36.dp
+    val rowScale = 1.3f
+    val timeCap = 36.dp * rowScale
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp * rowScale),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(Modifier.align(Alignment.Top), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                AnimatedAlarmNumber(hour, timeCap, ink, weight)
-                CapText(":", capHeight = timeCap, color = ink, width = ClockFace.CONDENSED, tracking = ClockFace.CONDENSED_TRACKING)
-                AnimatedAlarmNumber(alarm.time.minute, timeCap, ink, weight)
-                if (meridiem.isNotEmpty()) Text(meridiem, Modifier.padding(start = 3.dp),
-                    color = ink, style = MaterialTheme.typography.labelMedium)
-            }
-            DayLetters(alarm, order, ink, blockWidth = 66.dp, capHeight = 14.dp)
-        }
+        AlarmListTime(alarm, order, hour, meridiem, ink, weight, timeCap, rowScale, Modifier.align(Alignment.Top))
         Column(Modifier.weight(1f).align(Alignment.Top), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (alarm.label.isNotBlank()) {
                 Box(Modifier.heightIn(min = timeCap + ALARM_DIGIT_BOTTOM_BLEED_DP.dp), contentAlignment = Alignment.CenterStart) {
@@ -1039,12 +1026,50 @@ private fun AlarmListRow(
 }
 
 @Composable
+private fun AlarmListTime(
+    alarm: Alarm, order: List<DayOfWeek>, hour: Int, meridiem: String,
+    ink: Color, weight: Int, timeCap: Dp, rowScale: Float, modifier: Modifier,
+) {
+    val numeralStyle = ClockFace.numerals(timeCap, ClockFace.CONDENSED, weight, tracking = ClockFace.CONDENSED_TRACKING)
+    val firstInk = rememberInkBounds((hour / 10).toString(), numeralStyle)
+    val lastInk = rememberInkBounds((alarm.time.minute % 10).toString(), numeralStyle)
+    // Measure the time and its weekday run together so changes to the digits cannot shift the
+    // weekday edges on a later frame. Meridiem sits beside the measured area.
+    SubcomposeLayout(modifier) { constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val digits = subcompose("time") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                AnimatedAlarmNumber(hour, timeCap, ink, weight)
+                CapText(":", capHeight = timeCap, color = ink, width = ClockFace.CONDENSED, tracking = ClockFace.CONDENSED_TRACKING)
+                AnimatedAlarmNumber(alarm.time.minute, timeCap, ink, weight)
+            }
+        }.single().measure(loose)
+        val period = if (meridiem.isNotEmpty()) subcompose("meridiem") {
+            Text(meridiem, Modifier.padding(start = 5.dp), color = ink, style = MaterialTheme.typography.labelMedium)
+        }.single().measure(loose.copy(maxWidth = (loose.maxWidth - digits.width).coerceAtLeast(0))) else null
+        val left = firstInk.left.roundToInt()
+        val width = (digits.width - left - lastInk.right.roundToInt()).coerceAtLeast(1)
+        val days = subcompose("weekdays") {
+            DayLetters(alarm, order, ink, blockWidth = width.toDp(), capHeight = 14.dp * rowScale, alignInk = true)
+        }.single().measure(loose)
+        val timeHeight = maxOf(digits.height, period?.height ?: 0)
+        val dayTop = timeHeight + (6.dp * rowScale).roundToPx()
+        layout(digits.width + (period?.width ?: 0), dayTop + days.height) {
+            digits.placeRelative(0, (timeHeight - digits.height) / 2)
+            period?.placeRelative(digits.width, (timeHeight - period.height) / 2)
+            days.placeRelative(left, dayTop)
+        }
+    }
+}
+
+@Composable
 fun SelectionToolbar(
     selectedCount: Int,
     onClearSelection: () -> Unit,
     onDeleteClick: () -> Unit,
     deleteDescription: String = "Delete selected alarms",
     onSelectAll: (() -> Unit)? = null,
+    onDuplicate: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -1074,7 +1099,16 @@ fun SelectionToolbar(
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
 
-        if (onSelectAll != null) androidx.compose.material3.TextButton(onClick = onSelectAll) { Text("Select all") }
+        val actionColor = MaterialTheme.colorScheme.onPrimaryContainer
+        if (onSelectAll != null) IconButton(onClick = onSelectAll,
+            modifier = Modifier.semantics { contentDescription = "Select all" },
+        ) {
+            SelectAllIcon(actionColor)
+        }
+
+        if (onDuplicate != null) IconButton(onClick = onDuplicate) {
+            Icon(Icons.Outlined.ContentCopy, contentDescription = "Duplicate selected alarms", tint = actionColor)
+        }
 
         IconButton(onClick = onDeleteClick) {
             Icon(
@@ -1083,6 +1117,27 @@ fun SelectionToolbar(
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
+    }
+}
+
+@Composable
+private fun SelectAllIcon(color: Color) {
+    Canvas(Modifier.size(24.dp)) {
+        val margin = 3.dp.toPx()
+        val stroke = 1.75.dp.toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(margin, margin),
+            size = Size(size.width - 2 * margin, size.height - 2 * margin),
+            cornerRadius = CornerRadius(3.dp.toPx()),
+            style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx()))),
+        )
+        val check = Path().apply {
+            moveTo(size.width * .34f, size.height * .51f)
+            lineTo(size.width * .46f, size.height * .63f)
+            lineTo(size.width * .68f, size.height * .38f)
+        }
+        drawPath(check, color, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 
@@ -1362,6 +1417,7 @@ private fun DayLetters(
     ink: Color,
     blockWidth: Dp = DAY_BLOCK_DP.dp,
     capHeight: Dp = if (blockWidth < 80.dp) 19.dp else DAY_CAP_DP.dp,
+    alignInk: Boolean = false,
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -1389,11 +1445,18 @@ private fun DayLetters(
     val style = bold.copy(
         letterSpacing = with(density) { (DAY_TRACKING_DP.dp / bold.fontSize.toDp()).em },
     )
-    val scaleX = with(density) {
-        blockWidth.toPx() / measurer.measure(text, style).size.width
-    }
+    val advance = measurer.measure(text, style).size.width.toFloat()
+    val (left, right) = if (alignInk) {
+        val first = order.first()
+        val last = order.last()
+        val firstStyle = style.copy(fontFamily = (if (first in alarm.days) bold else light).fontFamily)
+        val lastStyle = style.copy(fontFamily = (if (last in alarm.days) bold else light).fontFamily)
+        rememberInkBounds(first.name.take(1), firstStyle).left to rememberInkBounds(last.name.take(1), lastStyle).right
+    } else 0f to 0f
+    val scaleX = with(density) { blockWidth.toPx() / (advance - left - right).coerceAtLeast(1f) }
 
-    StretchedCaps(text = text, style = style, capHeight = capHeight, scaleX = scaleX)
+    StretchedCaps(text = text, style = style, capHeight = capHeight, scaleX = scaleX,
+        modifier = if (alignInk) Modifier.offset { IntOffset(-(left * scaleX).roundToInt(), 0) } else Modifier)
 }
 
 /** Weight is the state, the same way it is on the numerals above. Not a second colour ramp. */

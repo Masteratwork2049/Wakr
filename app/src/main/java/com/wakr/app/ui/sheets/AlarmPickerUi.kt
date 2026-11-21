@@ -40,6 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -146,6 +147,7 @@ fun AlarmPickerSheetContent(
     onDelete: () -> Unit,
     modal: Boolean = false,
     initialRelative: Boolean = false,
+    onSkip: (() -> Unit)? = null,
 ) {
     val locale = LocalConfiguration.current.locales[0]
     val density = LocalDensity.current
@@ -301,6 +303,7 @@ fun AlarmPickerSheetContent(
             AlarmSchedulingOptions(wake, days.isEmpty(), showDelete, effectiveHour, minute, initialRelative,
                 setTime = { onHourChange(it.hour); onMinuteChange(it.minute); onPmChange(it.hour >= 12) },
                 setWake = setWake, setDays = setDays)
+            if (onSkip != null) AlarmOptionRow("Skip next occurrence", Icons.Outlined.SkipNext, onClick = onSkip)
         }
         if (showDelete) {
             Spacer(Modifier.height(8.dp))

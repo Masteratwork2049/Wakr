@@ -143,7 +143,7 @@ internal fun NextAlarmCard(
         scaleX = .94f + .06f * enter.value
         scaleY = scaleX
         translationY = 12.dp.toPx() * (1f - enter.value)
-    }.luminousElasticClickable(shape = shape, onClick = { if (next == null) onAdd() else onEdit(next.alarm) })
+    }.luminousElasticClickable(shape = shape, showGlow = false, onClick = { if (next == null) onAdd() else onEdit(next.alarm) })
         .background(colors.primaryContainer, shape)
         .border(1.25.dp, Color.White.copy(alpha = .26f), shape).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {

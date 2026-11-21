@@ -27,6 +27,7 @@ fun AlarmEditSheet(
     onDismiss: () -> Unit,
     onSave: (Alarm) -> Unit,
     onDelete: ((Long) -> Unit)?,
+    onSkip: ((Long) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -107,6 +108,8 @@ fun AlarmEditSheet(
                 ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
                 closeThen { onSave(updated) }
             },
+            onSkip = onSkip?.takeIf { initial.nextFire(java.time.ZonedDateTime.now()) != null }
+                ?.let { skip -> { closeThen { skip(initial.id) } } },
             onDelete = {
                 closeThen {
                     onDelete?.invoke(initial.id)

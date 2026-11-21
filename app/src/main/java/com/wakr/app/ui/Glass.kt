@@ -189,6 +189,7 @@ fun Modifier.luminousElasticClickable(
     maxStretchPercent: Float = 0.092f,
     maxTranslateDp: Dp = 2.6.dp,
     luminousRadiusScale: Float = 1.0f,
+    showGlow: Boolean = true,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ): Modifier {
@@ -253,7 +254,7 @@ fun Modifier.luminousElasticClickable(
     )
 
     val luminousAlpha by animateFloatAsState(
-        targetValue = if (isPressed) 1.0f else 0.0f,
+        targetValue = if (isPressed && showGlow) 1.0f else 0.0f,
         animationSpec = if (isPressed) {
             tween(durationMillis = 120, easing = FastOutSlowInEasing)
         } else {
@@ -279,7 +280,7 @@ fun Modifier.luminousElasticClickable(
         primaryColor.copy(alpha = 0.11f * luminousAlpha)
     }
 
-    var mod = this.pointerInput(enabled) {
+    var mod = this.pointerInput(enabled, showGlow) {
         if (!enabled) return@pointerInput
         awaitPointerEventScope {
             while (true) {
@@ -290,7 +291,7 @@ fun Modifier.luminousElasticClickable(
                         val pos = change.position
                         val cx = size.width / 2f
                         val cy = size.height / 2f
-                        if (rawTouchPosition == null) {
+                        if (showGlow && rawTouchPosition == null) {
                             lastRippleOrigin = pos
                             scope.launch {
                                 rippleProgress.snapTo(0f)
@@ -339,6 +340,7 @@ fun Modifier.luminousElasticClickable(
         .clip(shape)
         .drawWithContent {
             drawContent()
+            if (!showGlow) return@drawWithContent
 
             val w = size.width
             val h = size.height

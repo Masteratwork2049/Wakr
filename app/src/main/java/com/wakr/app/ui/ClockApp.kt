@@ -193,7 +193,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         var selectedWorldCityZoneId by rememberSaveable { mutableStateOf<String?>(null) }
         var alarmSelectionCount by remember { mutableIntStateOf(0) }
         var clearSelectionSignal by remember { mutableIntStateOf(0) }
-        var selectAllSignal by remember { mutableIntStateOf(0) }
+        var selectAllSignal by rememberSaveable { mutableIntStateOf(0) }
+        var duplicateSignal by remember { mutableIntStateOf(0) }
         var deleteClickSignal by remember { mutableIntStateOf(0) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         val settingsProgress = remember { Animatable(0f) }
@@ -323,6 +324,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                 else deleteClickSignal++
                             },
                             onSelectAll = if (activeTab == Tab.ALARMS) ({ selectAllSignal++ }) else null,
+                            onDuplicate = if (activeTab == Tab.ALARMS) ({ duplicateSignal++ }) else null,
                             deleteDescription = if (activeTab == Tab.WORLD) "Delete selected locations" else "Delete selected alarms",
                         )
                     }
@@ -414,8 +416,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                     onStaggerConsumed = { isPostOnboardingStaggerToken = 0 },
                                     listLayout = settings.alarms.listLayout,
                                     selectAllSignal = selectAllSignal,
-                                    onDuplicate = { saveWithConfirmation(it.asDuplicate()) },
-                                    onSkip = { vm.skipNext(it) }, onLock = { vm.setAlarmLock(it.id, true) },
+                                    duplicateSignal = duplicateSignal,
+                                    onDuplicate = { selection -> selection.forEach { vm.saveAlarm(it.asDuplicate()) } },
                                     onToggle = { id -> alarms.find { it.id == id }?.let {
                                         if (it.wake.isLocked) requestEdit(it) else vm.toggleAlarm(id)
                                     } }, onEdit = ::requestEdit,
@@ -442,7 +444,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                         order = settings.alarms.weekStart.order(com.wakr.app.ui.sheets.systemFirstDay()),
                                         onSave = { saveWithConfirmation(it); editing = null; showNewAlarmPicker = false },
                                         onCancel = { editing = null; showNewAlarmPicker = false },
-                                        onDelete = { vm.deleteAlarms(setOf(it)); editing = null; showNewAlarmPicker = false })
+                                        onDelete = { vm.deleteAlarms(setOf(it)); editing = null; showNewAlarmPicker = false },
+                                        onSkip = { vm.skipNext(it); editing = null })
                                 },
                                 modifier = Modifier.padding(body))
                         } else {
@@ -588,6 +591,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                     onDismiss = { editing = null },
                     onSave = { saveWithConfirmation(it); editing = null },
                     onDelete = if (draft.id == 0L) null else ({ id -> vm.deleteAlarm(id) }),
+                    onSkip = if (draft.id == 0L) null else ({ id -> vm.skipNext(id); editing = null }),
                 )
             }
         }
