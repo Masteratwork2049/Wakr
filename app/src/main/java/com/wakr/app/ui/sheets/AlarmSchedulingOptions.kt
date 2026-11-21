@@ -53,6 +53,11 @@ internal fun AlarmSchedulingOptions(
 ) {
     var dialog by rememberSaveable { mutableStateOf(if (initialRelative) "Alarm in…" else "") }
     val zone = wake.timeZoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+    if (once) {
+        AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
+            setWake(wake.copy(deleteAfterDismiss = it))
+        }
+    }
     AlarmOptionRow("Type time", Icons.Outlined.Edit) { dialog = "Type time" }
     if (!editing) {
         AlarmOptionDivider()
@@ -62,11 +67,11 @@ internal fun AlarmSchedulingOptions(
     AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
     if (once) {
         AlarmOptionRow("Schedule alarm", Icons.Outlined.CalendarMonth, wake.scheduledDateEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Next occurrence") { dialog = "Schedule alarm" }
-        AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
-            setWake(wake.copy(deleteAfterDismiss = it))
-        }
     } else AlarmOptionRow("Pause until", Icons.Outlined.CalendarMonth, wake.pausedUntilEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Off") { dialog = "Pause until" }
     AlarmOptionRow("Time zone", Icons.Outlined.Language, wake.timeZoneId ?: "Device time zone") { dialog = "Time zone" }
+    AlarmOptionRow("Silence after", Icons.Outlined.Timer, wake.silenceAfterMin?.let { if (it == 0) "Never" else "$it min" } ?: "App default") { dialog = "Silence after" }
+    AlarmOptionRow("Repeat missed alarm", Icons.Outlined.Repeat, missedAlarmCountLabel(wake.repeatMissedCount)) { dialog = "Repeat missed alarm" }
+    if (wake.repeatMissedCount != 0) AlarmOptionRow("Repeat interval", Icons.Outlined.Snooze, "${wake.reRingIntervalMin} min") { dialog = "Repeat interval" }
     val context = androidx.compose.ui.platform.LocalContext.current
     val hasFlash = remember(context) {
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)
@@ -76,9 +81,6 @@ internal fun AlarmSchedulingOptions(
             setWake(wake.copy(flashEnabled = it))
         }
     }
-    AlarmOptionRow("Silence after", Icons.Outlined.Timer, wake.silenceAfterMin?.let { if (it == 0) "Never" else "$it min" } ?: "App default") { dialog = "Silence after" }
-    AlarmOptionRow("Repeat missed alarm", Icons.Outlined.Repeat, missedAlarmCountLabel(wake.repeatMissedCount)) { dialog = "Repeat missed alarm" }
-    if (wake.repeatMissedCount != 0) AlarmOptionRow("Repeat interval", Icons.Outlined.Snooze, "${wake.reRingIntervalMin} min") { dialog = "Repeat interval" }
     SwitchRow("Lock alarm", "Require unlocking before editing", wake.isLocked) { setWake(wake.copy(isLocked = it)) }
     if (dialog == "") return
     if (dialog == "Schedule alarm" || dialog == "Pause until") {
