@@ -16,6 +16,14 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextAlign
+import com.wakr.app.ui.screens.AlarmTimeReadout
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,7 +67,6 @@ import com.wakr.app.data.ClockStore
 import com.wakr.app.ui.rememberWallTicker
 import com.wakr.app.ui.theme.ClockFace
 import com.wakr.app.ui.theme.ClockTheme
-import com.wakr.app.ui.theme.Numerals
 
 /**
  * The screen a ringing alarm puts in front of you.
@@ -260,32 +267,19 @@ internal fun AlarmRingingScreen(
     val now by rememberWallTicker(60_000L)
     val time = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
-    val formattedTime = if (is24Hour) "%02d:%02d".format(time.hour, time.minute)
-        else "%d:%02d".format((time.hour % 12).takeIf { it != 0 } ?: 12, time.minute)
-    val meridiem = if (is24Hour) "" else if (time.hour < 12) "AM" else "PM"
     val colors = MaterialTheme.colorScheme
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val bodyHeight = maxHeight
-        val cap = (maxWidth * .3f).coerceIn(48.dp, 132.dp)
+        val cap = minOf((maxWidth - 40.dp) * .65f, bodyHeight * .43f, 264.dp).coerceAtLeast(48.dp)
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = bodyHeight)
                 .padding(horizontal = 20.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(label, style = MaterialTheme.typography.headlineMediumEmphasized, color = colors.onSurface)
-                Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
-                    color = colors.primaryContainer, contentColor = colors.onPrimaryContainer) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        Numerals(formattedTime, cap, colors.onPrimaryContainer, width = ClockFace.CONDENSED,
-                            weight = ClockFace.WEIGHT_ON, tracking = ClockFace.CONDENSED_TRACKING)
-                        if (meridiem.isNotEmpty()) Text(meridiem, style = MaterialTheme.typography.titleLarge)
-                    }
-                }
-            }
+            Text(label, style = MaterialTheme.typography.headlineMediumEmphasized, color = colors.onSurface,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            RingingClockReadout(time, is24Hour, cap, Modifier.fillMaxWidth().padding(vertical = 16.dp))
             Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 RingActionSlider(snoozeMinutes, onSnooze, if (hasMission) "Solve to dismiss" else "Dismiss", onPrimary)
                 AlarmSoundActions(muted, onMute, onEmergency)
@@ -295,10 +289,28 @@ internal fun AlarmRingingScreen(
 }
 
 @Composable
+internal fun RingingClockReadout(
+    time: java.time.LocalTime,
+    use24h: Boolean,
+    cap: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    val spokenTime = time.format(java.time.format.DateTimeFormatter.ofPattern(if (use24h) "HH:mm" else "h:mm a"))
+    AlarmTimeReadout(time = time, use24h = use24h, capHeight = cap, ink = MaterialTheme.colorScheme.onSurface,
+        weight = ClockFace.WEIGHT_OFF, modifier = modifier.clearAndSetSemantics { contentDescription = spokenTime })
+}
+
+@Composable
 private fun AlarmSoundActions(muted: Boolean, onMute: () -> Unit, onEmergency: (() -> Unit)?) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedButton(onClick = onMute) { Text(if (muted) "Unmute" else "Mute") }
+        OutlinedButton(onClick = onMute, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)) {
+            RingPillLabel(
+                icon = if (muted) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                title = if (muted) "Unmute" else "Mute",
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         if (onEmergency != null) EmergencyStopButton(onEmergency)
     }
 }

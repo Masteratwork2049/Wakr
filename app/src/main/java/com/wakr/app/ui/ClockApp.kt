@@ -28,10 +28,12 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -376,15 +378,13 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                     TopAppBar(
                         title = {},
                         actions = {
-                            if (activeTab == Tab.ALARMS) {
-                                com.wakr.app.ui.sheets.SheetHeaderButton(
-                                    text = if (settings.alarms.listLayout) "Grid view" else "List view",
-                                    primary = false,
-                                    onClick = {
-                                        vm.updateSettings { it.copy(alarms = it.alarms.copy(listLayout = !it.alarms.listLayout)) }
-                                    },
-                                )
-                            }
+                            AlarmLayoutPill(
+                                visible = activeTab == Tab.ALARMS,
+                                listLayout = settings.alarms.listLayout,
+                                onToggle = {
+                                    vm.updateSettings { it.copy(alarms = it.alarms.copy(listLayout = !it.alarms.listLayout)) }
+                                },
+                            )
                             IconButton(onClick = ::openSettings) {
                                 Icon(
                                     Icons.Outlined.Settings,
@@ -681,4 +681,26 @@ internal fun UnlockAlarmDialog(label: String, onDismiss: () -> Unit, onUnlock: (
         },
         dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** The pill has its own transition so the settings action remains anchored. */
+@Composable
+internal fun AlarmLayoutPill(visible: Boolean, listLayout: Boolean, onToggle: () -> Unit) {
+    val motion = android.animation.ValueAnimator.areAnimatorsEnabled()
+    AnimatedVisibility(
+        visible = visible,
+        enter = if (motion) fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+            slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 5 }
+        else androidx.compose.animation.EnterTransition.None,
+        exit = if (motion) fadeOut(tween(150, easing = FastOutSlowInEasing)) +
+            slideOutHorizontally(tween(200, easing = FastOutSlowInEasing)) { it / 5 }
+        else androidx.compose.animation.ExitTransition.None,
+    ) {
+        Box(if (visible) Modifier else Modifier.clearAndSetSemantics {}) {
+            com.wakr.app.ui.sheets.SheetHeaderButton(
+                text = if (listLayout) "Grid view" else "List view", primary = false,
+                onClick = { if (visible) onToggle() },
+            )
+        }
+    }
 }
