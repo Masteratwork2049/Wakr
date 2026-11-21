@@ -9,3 +9,6 @@ internal fun Alarm.preservingDismissal(previous: Alarm?): Alarm {
         skippedOccurrenceMillis = if (sameOccurrence) previous?.skippedOccurrenceMillis else null,
         skippedOccurrenceDate = if (sameOccurrence) previous?.skippedOccurrenceDate else null)
 }
+
+/** Copies the alarm's settings and switch state without carrying over a ringing occurrence. */
+internal fun Alarm.asDuplicate(): Alarm = copy(id = 0L, createdAt = null).preservingDismissal(null)

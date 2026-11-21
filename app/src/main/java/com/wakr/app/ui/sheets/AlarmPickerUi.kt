@@ -21,6 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Label
@@ -269,7 +273,11 @@ fun AlarmPickerSheetContent(
         AlarmNameCard(label = label, onLabelChange = onLabelChange, clearDefault = title == "New Alarm")
         if (showDelete) {
             Spacer(Modifier.height(8.dp))
-            SheetHeaderButton("Duplicate alarm", primary = false, onClick = { onSave(true) })
+            SheetHeaderButton(
+                "Duplicate alarm", primary = false, onClick = { onSave(true) },
+                icon = Icons.Outlined.ContentCopy, modifier = Modifier.fillMaxWidth(),
+                arrangement = Arrangement.Start,
+            )
         }
 
         Spacer(Modifier.height(8.dp))
@@ -657,6 +665,32 @@ internal fun AlarmOptionRow(
 }
 
 @Composable
+internal fun AlarmOptionSwitchPill(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        OptionIconBubble(icon)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
 private fun OptionIconBubble(icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Box(
         Modifier
@@ -693,11 +727,14 @@ internal fun SheetHeaderButton(
     primary: Boolean,
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    modifier: Modifier = Modifier,
+    arrangement: Arrangement.Horizontal = Arrangement.Center,
 ) {
+    val contentColor = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
     Row(
-        modifier = Modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(18.dp))
+        modifier = modifier
+            .heightIn(min = 46.dp)
+            .clip(CircleShape)
             .background(
                 if (primary) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.primaryContainer.copy(alpha = .70f)
@@ -705,16 +742,16 @@ internal fun SheetHeaderButton(
             .elasticClickable(onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = arrangement,
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
         }
         Text(
             text,
             style = MaterialTheme.typography.labelLargeEmphasized,
-            color = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
+            color = contentColor,
         )
     }
 }

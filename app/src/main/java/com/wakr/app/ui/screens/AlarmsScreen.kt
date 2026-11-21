@@ -1,5 +1,7 @@
 package com.wakr.app.ui.screens
 
+import com.wakr.app.core.asDuplicate
+
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -36,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -559,16 +562,13 @@ internal fun InlineAlarmEditorPanel(
                 val time = LocalTime.of(saveHour, minute)
                 val base = editingAlarm ?: Alarm(0L, time)
                 val alarmToSave = base.copy(
-                    id = if (duplicate) 0 else base.id,
                     wake = wake.forAlarmSave(days, time),
-                    pausedByGroup = false,
                     time = time,
                     days = days,
                     vibrate = vibrate,
                     soundUri = soundUri,
                     label = label,
-                    enabled = true,
-                )
+                ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
                 onSave(alarmToSave)
             },
             onDelete = {
@@ -847,9 +847,8 @@ private fun AlarmTile(
     BoxWithConstraints(Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = maxTileWidth)) {
     val tileWidth = maxWidth
     val inset = CONTENT_INSET_DP.dp
-    val readoutWidth = if (listLayout) tileWidth.coerceAtMost(220.dp) else tileWidth
-    val fit = fittedTime(meridiem = meridiem, tileWidth = readoutWidth, target = inset)
-    val hourCap = fit.cap
+    val fit = if (!listLayout) fittedTime(meridiem = meridiem, tileWidth = tileWidth, target = inset) else null
+    val hourCap = fit?.cap ?: 0.dp
     val timeToDays = hourCap * MERIDIEM_GAP_FRACTION - SWITCH_TOUCH_INSET_DP.dp - ALARM_DIGIT_BOTTOM_BLEED_DP.dp
     val tileHeight = inset * 2 + hourCap + timeToDays + SWITCH_ROW_VISIBLE_DP.dp
 
@@ -874,7 +873,7 @@ private fun AlarmTile(
             }
             .background(animatedContainer, RoundedCornerShape(24.dp))
             .border(if (selected) 2.dp else 1.25.dp, animatedBorderColor, RoundedCornerShape(24.dp))
-            .height(tileHeight + textHeight)
+            .then(if (listLayout) Modifier else Modifier.height(tileHeight + textHeight))
             .combinedClickable(
                 onClick = {
                     if (inSelectionMode) {
@@ -906,81 +905,133 @@ private fun AlarmTile(
                 onLongClick(label = "Alarm actions") { onStartSelection(); true }
             },
     ) {
-            Box(Modifier.fillMaxSize()) {
-                Column(Modifier.align(Alignment.TopCenter).padding(start = 38.dp, end = 38.dp, top = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (alarm.label.isNotBlank()) Text(alarm.label,
-                        color = animatedInk, style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    if (badge.isNotEmpty()) Text(badge, color = animatedInk, style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
-                if (selected) {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 12.dp, top = 12.dp)
-                            .size(22.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            contentDescription = "Selected",
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp),
-                        )
+            val toggle: @Composable () -> Unit = {
+                Switch(
+                    checked = armed,
+                    modifier = Modifier.graphicsLayer {
+                        if (windowExpanded) {
+                            scaleX = .88f
+                            scaleY = .88f
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, .5f)
+                        }
+                    },
+                    onCheckedChange = {
+                        if (inSelectionMode) {
+                            onToggleSelect()
+                        } else {
+                            onToggle()
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = animatedContainer,
+                        checkedTrackColor = animatedInk,
+                        checkedBorderColor = Color.Transparent,
+                        uncheckedThumbColor = animatedInk,
+                        uncheckedTrackColor = Color.Transparent,
+                        uncheckedBorderColor = animatedInk,
+                    ),
+                )
+            }
+            if (listLayout) {
+                AlarmListRow(alarm, order, hour12, meridiem, badge, selected, animatedInk, animatedWeight, toggle)
+            } else {
+                val gridFit = checkNotNull(fit)
+                Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.align(Alignment.TopCenter).padding(start = 38.dp, end = 38.dp, top = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (alarm.label.isNotBlank()) Text(alarm.label,
+                            color = animatedInk, style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        if (badge.isNotEmpty()) Text(badge, color = animatedInk, style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
-                }
+                    if (selected) {
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 12.dp, top = 12.dp)
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp),
+                            )
+                        }
+                    }
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = inset + textHeight, bottom = inset - SWITCH_TOUCH_INSET_DP.dp),
-                    verticalArrangement = Arrangement.spacedBy(timeToDays),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    AlarmTimeReadout(
-                        time = alarm.time, use24h = use24h, capHeight = hourCap,
-                        ink = animatedInk, weight = animatedWeight,
-                        modifier = Modifier.width(readoutWidth).padding(start = fit.padStart, end = fit.padEnd),
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = inset),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = inset + textHeight, bottom = inset - SWITCH_TOUCH_INSET_DP.dp),
+                        verticalArrangement = Arrangement.spacedBy(timeToDays),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        DayLetters(alarm, order, animatedInk, (tileWidth - inset * 2 - 60.dp).coerceIn(1.dp, DAY_BLOCK_DP.dp))
-                        Switch(
-                            checked = armed,
-                            modifier = Modifier.graphicsLayer {
-                                if (windowExpanded) {
-                                    scaleX = .88f
-                                    scaleY = .88f
-                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, .5f)
-                                }
-                            },
-                            onCheckedChange = {
-                                if (inSelectionMode) {
-                                    onToggleSelect()
-                                } else {
-                                    onToggle()
-                                }
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = animatedContainer,
-                                checkedTrackColor = animatedInk,
-                                checkedBorderColor = Color.Transparent,
-                                uncheckedThumbColor = animatedInk,
-                                uncheckedTrackColor = Color.Transparent,
-                                uncheckedBorderColor = animatedInk,
-                            ),
+                        AlarmTimeReadout(
+                            time = alarm.time, use24h = use24h, capHeight = hourCap,
+                            ink = animatedInk, weight = animatedWeight,
+                            modifier = Modifier.fillMaxWidth().padding(start = gridFit.padStart, end = gridFit.padEnd),
                         )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = inset),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            DayLetters(alarm, order, animatedInk, (tileWidth - inset * 2 - 60.dp).coerceIn(1.dp, DAY_BLOCK_DP.dp))
+                            toggle()
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AlarmListRow(
+    alarm: Alarm,
+    order: List<DayOfWeek>,
+    hour: Int,
+    meridiem: String,
+    badge: String,
+    selected: Boolean,
+    ink: Color,
+    weight: Int,
+    toggle: @Composable () -> Unit,
+) {
+    val timeCap = 28.dp
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.align(Alignment.Top), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                AnimatedAlarmNumber(hour, timeCap, ink, weight)
+                CapText(":", capHeight = timeCap, color = ink, width = ClockFace.CONDENSED, tracking = ClockFace.CONDENSED_TRACKING)
+                AnimatedAlarmNumber(alarm.time.minute, timeCap, ink, weight)
+                if (meridiem.isNotEmpty()) Text(meridiem, Modifier.padding(start = 3.dp),
+                    color = ink, style = MaterialTheme.typography.labelMedium)
+            }
+            DayLetters(alarm, order, ink)
+        }
+        Column(Modifier.weight(1f).align(Alignment.Top), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (alarm.label.isNotBlank()) {
+                Box(Modifier.heightIn(min = timeCap + ALARM_DIGIT_BOTTOM_BLEED_DP.dp), contentAlignment = Alignment.CenterStart) {
+                    Text(alarm.label, color = ink, style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            if (badge.isNotEmpty()) Text(badge, color = ink,
+                style = MaterialTheme.typography.labelMedium, maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
+        }
+        toggle()
     }
 }
 

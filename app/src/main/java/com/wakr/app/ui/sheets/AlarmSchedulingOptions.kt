@@ -8,6 +8,8 @@ import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.FlashlightOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -60,12 +62,20 @@ internal fun AlarmSchedulingOptions(
     AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
     if (once) {
         AlarmOptionRow("Schedule alarm", Icons.Outlined.CalendarMonth, wake.scheduledDateEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Next occurrence") { dialog = "Schedule alarm" }
-        SwitchRow("Auto-delete after dismissal", "Show as Temporary on the Alarms tab", wake.deleteAfterDismiss) {
+        AlarmOptionSwitchPill("Auto-delete after dismissal", "Show as Temporary on the Alarms tab", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
             setWake(wake.copy(deleteAfterDismiss = it))
         }
     } else AlarmOptionRow("Pause until", Icons.Outlined.CalendarMonth, wake.pausedUntilEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Off") { dialog = "Pause until" }
     AlarmOptionRow("Time zone", Icons.Outlined.Language, wake.timeZoneId ?: "Device time zone") { dialog = "Time zone" }
-    if (androidx.compose.ui.platform.LocalContext.current.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)) SwitchRow("Flash", "Light the camera LED while ringing", wake.flashEnabled) { setWake(wake.copy(flashEnabled = it)) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val hasFlash = remember(context) {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)
+    }
+    if (hasFlash) {
+        AlarmOptionSwitchPill("Flash", "Light the camera LED while ringing", Icons.Outlined.FlashlightOn, wake.flashEnabled) {
+            setWake(wake.copy(flashEnabled = it))
+        }
+    }
     AlarmOptionRow("Silence after", Icons.Outlined.Timer, wake.silenceAfterMin?.let { if (it == 0) "Never" else "$it min" } ?: "App default") { dialog = "Silence after" }
     AlarmOptionRow("Repeat missed alarm", Icons.Outlined.Repeat, missedAlarmCountLabel(wake.repeatMissedCount)) { dialog = "Repeat missed alarm" }
     if (wake.repeatMissedCount != 0) AlarmOptionRow("Repeat interval", Icons.Outlined.Snooze, "${wake.reRingIntervalMin} min") { dialog = "Repeat interval" }

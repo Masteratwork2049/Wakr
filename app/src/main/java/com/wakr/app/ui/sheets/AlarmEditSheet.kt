@@ -1,5 +1,7 @@
 package com.wakr.app.ui.sheets
 
+import com.wakr.app.core.asDuplicate
+
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -28,6 +30,19 @@ fun AlarmEditSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
+    fun closeThen(action: () -> Unit) {
+        if (closing) return
+        closing = true
+        scope.launch {
+            try {
+                sheetState.hide()
+                if (!sheetState.isVisible) action()
+            } finally {
+                closing = false
+            }
+        }
+    }
     val context = LocalContext.current
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
 
@@ -79,36 +94,21 @@ fun AlarmEditSheet(
             onToggleDay = { day -> days = if (day in days) days - day else days + day },
             onVibrateChange = { vibrate = it },
             onSoundClick = openSoundSelector,
-            onCancel = {
-                scope.launch {
-                    sheetState.hide()
-                }.invokeOnCompletion {
-                    onDismiss()
-                }
-            },
+            onCancel = { closeThen(onDismiss) },
             onSave = { duplicate ->
                 val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
                 val updated = initial.copy(
-                    id = if (duplicate) 0 else initial.id,
                     wake = wake.forAlarmSave(days, LocalTime.of(saveHour, minute)),
-                    pausedByGroup = false,
                     time = LocalTime.of(saveHour, minute),
                     label = label.trim(),
                     days = days,
-                    enabled = true,
                     vibrate = vibrate,
                     soundUri = soundUri,
-                )
-                scope.launch {
-                    sheetState.hide()
-                }.invokeOnCompletion {
-                    onSave(updated)
-                }
+                ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
+                closeThen { onSave(updated) }
             },
             onDelete = {
-                scope.launch {
-                    sheetState.hide()
-                }.invokeOnCompletion {
+                closeThen {
                     onDelete?.invoke(initial.id)
                     onDismiss()
                 }

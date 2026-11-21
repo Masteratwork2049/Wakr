@@ -8,6 +8,28 @@ class PhaseTwoAlarmTest {
     private val now = ZonedDateTime.parse("2026-03-07T18:00Z")
     private val alarm = Alarm(7, LocalTime.of(2, 30))
 
+    @Test fun duplicatePreservesSwitchStateAndClearsOccurrence() {
+        val original = alarm.copy(
+            enabled = false,
+            createdAt = 10L,
+            skippedOccurrenceDate = now.toLocalDate(),
+            ringingAt = 20L,
+            snoozedUntilMillis = 30L,
+            missedRetries = 2,
+        )
+        val duplicate = original.asDuplicate()
+        assertFalse(duplicate.enabled)
+        assertTrue(original.copy(enabled = true).asDuplicate().enabled)
+        assertTrue(original.copy(enabled = true, pausedByGroup = true).asDuplicate().pausedByGroup)
+        assertEquals(0L, duplicate.id)
+        assertEquals(original.time, duplicate.time)
+        assertNull(duplicate.createdAt)
+        assertNull(duplicate.skippedOccurrenceDate)
+        assertNull(duplicate.ringingAt)
+        assertNull(duplicate.snoozedUntilMillis)
+        assertEquals(0, duplicate.missedRetries)
+    }
+
     @Test fun fixedDateInPinnedZoneAcrossSpringGap() {
         val fixed = alarm.copy(wake = WakeOptions(timeZoneId = "America/New_York",
             scheduledDateEpochDay = LocalDate.of(2026, 3, 8).toEpochDay()))

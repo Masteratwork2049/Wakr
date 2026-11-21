@@ -1,5 +1,7 @@
 package com.wakr.app.ui
 
+import com.wakr.app.core.asDuplicate
+
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 
@@ -329,11 +331,13 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                         title = {},
                         actions = {
                             if (activeTab == Tab.ALARMS) {
-                                androidx.compose.material3.TextButton(onClick = {
-                                    vm.updateSettings { it.copy(alarms = it.alarms.copy(listLayout = !it.alarms.listLayout)) }
-                                }) {
-                                    Text(if (settings.alarms.listLayout) "Grid view" else "List view")
-                                }
+                                com.wakr.app.ui.sheets.SheetHeaderButton(
+                                    text = if (settings.alarms.listLayout) "Grid view" else "List view",
+                                    primary = false,
+                                    onClick = {
+                                        vm.updateSettings { it.copy(alarms = it.alarms.copy(listLayout = !it.alarms.listLayout)) }
+                                    },
+                                )
                             }
                             IconButton(onClick = ::openSettings) {
                                 Icon(
@@ -410,7 +414,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                     onStaggerConsumed = { isPostOnboardingStaggerToken = 0 },
                                     listLayout = settings.alarms.listLayout,
                                     selectAllSignal = selectAllSignal,
-                                    onDuplicate = { saveWithConfirmation(it.copy(id = 0, enabled = true, pausedByGroup = false)) },
+                                    onDuplicate = { saveWithConfirmation(it.asDuplicate()) },
                                     onSkip = { vm.skipNext(it) }, onLock = { vm.setAlarmLock(it.id, true) },
                                     onToggle = { id -> alarms.find { it.id == id }?.let {
                                         if (it.wake.isLocked) requestEdit(it) else vm.toggleAlarm(id)
