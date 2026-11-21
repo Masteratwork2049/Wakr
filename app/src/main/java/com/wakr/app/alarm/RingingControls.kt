@@ -1,211 +1,53 @@
 package com.wakr.app.alarm
 
-import android.animation.ValueAnimator
 import android.os.SystemClock
-import android.view.HapticFeedbackConstants
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.animation.core.animate
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal const val EMERGENCY_HOLD_MS = 10_000L
 
-internal enum class RingDirection { SNOOZE, PRIMARY }
-
-internal fun ringDirection(fraction: Float, snoozeAvailable: Boolean): RingDirection? = when {
-    fraction >= .7f -> RingDirection.PRIMARY
-    fraction <= -.7f && snoozeAvailable -> RingDirection.SNOOZE
-    else -> null
-}
-
 @Composable
-internal fun RingActionSlider(
-    snoozeMinutes: Int,
-    onSnooze: (suspend (Offset) -> Boolean)?,
-    primaryText: String,
-    onPrimary: suspend (Offset) -> Boolean,
+internal fun RingActionPill(
+    title: String,
+    icon: ImageVector,
+    primary: Boolean = false,
+    enabled: Boolean = true,
+    onAction: (Offset) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val snoozeText = if (onSnooze == null) "Snooze unavailable" else "Snooze · $snoozeMinutes min"
-    var trackCenter by remember { mutableStateOf(Offset.Zero) }
-    var fraction by remember { mutableFloatStateOf(0f) }
-    var pressed by remember { mutableStateOf(false) }
-    var dragging by remember { mutableStateOf(false) }
-    var committing by remember { mutableStateOf(false) }
-    var reset by remember { mutableStateOf<Job?>(null) }
-    val scope = rememberCoroutineScope()
-    val view = LocalView.current
-    val snooze by rememberUpdatedState(onSnooze)
-    val primary by rememberUpdatedState(onPrimary)
-    val direction by rememberUpdatedState(primaryText)
-    val motion = ValueAnimator.areAnimatorsEnabled()
-    val spatialMotion = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-    val thumbScale by animateFloatAsState(
-        targetValue = if (motion && (pressed || dragging)) .91f else 1f,
-        animationSpec = spatialMotion,
-        label = "ringSliderPress",
-    )
-    val armed by remember(onSnooze != null) {
-        derivedStateOf { ringDirection(fraction, snooze != null) }
+    var center by remember { mutableStateOf(Offset.Zero) }
+    val modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).onGloballyPositioned {
+        center = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f))
     }
-    fun returnToCenter() {
-        if (!motion) {
-            fraction = 0f
-        } else reset = scope.launch {
-            animate(fraction, 0f, animationSpec = spatialMotion) { value, _ ->
-                fraction = value
-            }
-        }
-    }
-    val resetAction by rememberUpdatedState<() -> Unit>(::returnToCenter)
-
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val thumbWidth = 72.dp
-            val travel = (maxWidth - thumbWidth) / 2
-            val pixels = with(androidx.compose.ui.platform.LocalDensity.current) { travel.toPx().coerceAtLeast(1f) }
-            fun settle(target: RingDirection, fromDrag: Boolean): Boolean {
-                val action = if (target == RingDirection.SNOOZE) snooze ?: return false else primary
-                if (committing) return false
-                val origin = trackCenter + Offset(if (fromDrag) pixels * fraction else 0f, 0f)
-                committing = true
-                reset?.cancel()
-                scope.launch {
-                    if (!action(origin)) {
-                        committing = false
-                        returnToCenter()
-                    }
-                }
-                return true
-            }
-            val settleDrag by rememberUpdatedState<(RingDirection) -> Boolean>({ settle(it, true) })
-            Surface(
-                modifier = Modifier.fillMaxWidth()
-                    .onGloballyPositioned { trackCenter = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f)) }
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = "Alarm slider"
-                        stateDescription = "$snoozeText. $direction."
-                        customActions = buildList {
-                            if (onSnooze != null) add(CustomAccessibilityAction(snoozeText) { settle(RingDirection.SNOOZE, false) })
-                            add(CustomAccessibilityAction(primaryText) { settle(RingDirection.PRIMARY, false) })
-                        }
-                    }
-                    .onKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyUp) false
-                        else when (event.key) {
-                            Key.DirectionLeft -> if (snooze == null) false else { settle(RingDirection.SNOOZE, false) }
-                            Key.DirectionRight, Key.Enter -> { settle(RingDirection.PRIMARY, false) }
-                            else -> false
-                        }
-                    }
-                    .focusable()
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            pressed = true
-                            try {
-                                waitForUpOrCancellation()
-                            } finally { pressed = false }
-                        }
-                    }
-                    .pointerInput(pixels) {
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                if (!committing) {
-                                    reset?.cancel()
-                                    dragging = true
-                                }
-                            },
-                            onDragCancel = {
-                                dragging = false
-                                if (!committing) resetAction()
-                            },
-                            onDragEnd = {
-                                if (dragging) {
-                                    dragging = false
-                                    val target = ringDirection(fraction, snooze != null)
-                                    if (target != null) settleDrag(target) else resetAction()
-                                }
-                            },
-                        ) { change, delta ->
-                            change.consume()
-                            if (dragging) {
-                                val previous = ringDirection(fraction, snooze != null)
-                                fraction = (fraction + delta / pixels).coerceIn(if (snooze == null) -.12f else -1f, 1f)
-                                val target = ringDirection(fraction, snooze != null)
-                                if (target != null && target != previous) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                            }
-                        }
-                    },
-                shape = CircleShape,
-                color = colors.surfaceContainerHighest,
-            ) {
-                Box(Modifier.fillMaxWidth().heightIn(min = 72.dp), contentAlignment = Alignment.Center) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(snoozeText, Modifier.weight(1f).clearAndSetSemantics {}
-                            .graphicsLayer { alpha = 1f - (fraction / .7f).coerceIn(0f, 1f) }, textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = when {
-                                onSnooze == null -> colors.outline
-                                armed == RingDirection.SNOOZE -> colors.onSurface
-                                else -> colors.onSurfaceVariant
-                            },
-                            fontWeight = if (armed == RingDirection.SNOOZE) androidx.compose.ui.text.font.FontWeight.Bold else null)
-                        Spacer(Modifier.width(62.dp))
-                        Text(primaryText, Modifier.weight(1f).clearAndSetSemantics {}
-                            .graphicsLayer { alpha = 1f - (-fraction / .7f).coerceIn(0f, 1f) }, textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.labelLarge, color = colors.onSurface,
-                            fontWeight = if (armed == RingDirection.PRIMARY) androidx.compose.ui.text.font.FontWeight.Bold else null)
-                    }
-                    Box(Modifier.matchParentSize()) {
-                        Surface(
-                            Modifier.align(Alignment.Center).width(thumbWidth).fillMaxHeight().graphicsLayer {
-                                translationX = pixels * fraction
-                                scaleX = thumbScale
-                            },
-                            shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.SwapHoriz, null) }
-                        }
-                    }
-                }
-            }
-        }
+    val onClick = { onAction(center) }
+    if (primary) Button(onClick = onClick, modifier = modifier, enabled = enabled) {
+        RingPillLabel(icon, title, LocalContentColor.current)
+    } else OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled) {
+        RingPillLabel(icon, title, if (enabled) colors.onSurface else LocalContentColor.current)
     }
 }
 

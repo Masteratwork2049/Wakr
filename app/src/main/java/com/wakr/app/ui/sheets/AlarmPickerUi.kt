@@ -42,6 +42,8 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.runtime.SideEffect
@@ -166,6 +168,7 @@ fun AlarmPickerSheetContent(
     modal: Boolean = false,
     initialRelative: Boolean = false,
     fullscreen: Boolean = false,
+    creating: Boolean = false,
     onSkip: (() -> Unit)? = null,
     missions: List<com.wakr.app.core.AlarmMission> = emptyList(),
     onMissions: (List<com.wakr.app.core.AlarmMission>) -> Unit = {},
@@ -253,7 +256,7 @@ fun AlarmPickerSheetContent(
         Spacer(Modifier.height(8.dp))
 
         val nameAndDuplicate: @Composable () -> Unit = {
-            AlarmNameCard(label = label, onLabelChange = onLabelChange, clearDefault = title == "New Alarm")
+            AlarmNameCard(label = label, onLabelChange = onLabelChange, clearDefault = creating || title == "New Alarm")
             if (showDelete) {
                 Spacer(Modifier.height(8.dp))
                 SheetHeaderButton("Duplicate alarm", primary = false, onClick = { onSave(true) },
@@ -350,7 +353,7 @@ fun AlarmPickerSheetContent(
         if (fullscreen) {
             Surface(Modifier.fillMaxWidth(), shape = AlarmCardShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column {
-                    AlarmSchedulingOptions(wake, days.isEmpty(), true, effectiveHour, minute, false,
+                    AlarmSchedulingOptions(wake, days.isEmpty(), !creating, effectiveHour, minute, initialRelative,
                         setTime, setWake, setDays, part = AlarmSchedulePart.BASICS)
                 }
             }
@@ -869,7 +872,12 @@ internal fun AlarmEditorSection(
                 }
                 Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.rotate(rotation), tint = colors.onSurfaceVariant)
             }
-            AnimatedVisibility(visibleState = visibility) {
+            // Expand from the header. Avoid a second alpha layer over the whole editor group.
+            AnimatedVisibility(
+                visibleState = visibility,
+                enter = expandVertically(expandFrom = Alignment.Top, animationSpec = tween(220)),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = tween(180)),
+            ) {
                 Column {
                     AlarmOptionDivider()
                     content()
@@ -919,6 +927,7 @@ internal fun SheetHeaderButton(
     modifier: Modifier = Modifier,
     arrangement: Arrangement.Horizontal = Arrangement.Center,
     enabled: Boolean = true,
+    opaque: Boolean = false,
 ) {
     val contentColor = if (!enabled) MaterialTheme.colorScheme.onSurfaceVariant else if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
     Row(
@@ -928,7 +937,7 @@ internal fun SheetHeaderButton(
             .background(
                 if (!enabled) MaterialTheme.colorScheme.surfaceVariant
                 else if (primary) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.primaryContainer.copy(alpha = .70f)
+                else MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (opaque) 1f else .70f)
             )
             .elasticClickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp),

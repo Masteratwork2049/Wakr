@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.SystemClock
 import com.wakr.app.core.withAddedSeconds
 import com.wakr.app.core.ClockTimer
+import com.wakr.app.core.finishAfterMission
 import com.wakr.app.core.finishUserOccurrence
 import com.wakr.app.core.finishEmergencyOccurrence
 import com.wakr.app.core.Alarm
@@ -115,7 +116,9 @@ class ClockActionReceiver : BroadcastReceiver() {
 
 internal data class RingActionReceipt(val snoozeMinutes: Int?)
 
-internal suspend fun finishRing(context: Context, id: Long, at: Long, action: String): RingActionReceipt? {
+internal suspend fun finishRing(
+    context: Context, id: Long, at: Long, action: String, solvedMissionIndex: Int? = null,
+): RingActionReceipt? {
     val snooze = action == ClockActionReceiver.ACTION_SNOOZE
     val emergency = action == ClockActionReceiver.ACTION_EMERGENCY
     val fallback = RuntimeAlarms.settings(context).alarms.snoozeMinutes
@@ -124,8 +127,11 @@ internal suspend fun finishRing(context: Context, id: Long, at: Long, action: St
     val updated = RuntimeAlarms.update(context) { alarms -> alarms.mapNotNull { alarm ->
         if (alarm.id != id || alarm.ringingAt != at) return@mapNotNull alarm
         val due = now + alarm.snoozeMinutes(fallback) * 60_000L
-        val result = if (emergency) alarm.finishEmergencyOccurrence(id, at)
-            else alarm.finishUserOccurrence(id, at, due.takeIf { snooze })
+        val result = when {
+            emergency -> alarm.finishEmergencyOccurrence(id, at)
+            solvedMissionIndex != null -> alarm.finishAfterMission(id, at, solvedMissionIndex)
+            else -> alarm.finishUserOccurrence(id, at, due.takeIf { snooze })
+        }
         if (result !== alarm) handled = alarm
         result
     } }

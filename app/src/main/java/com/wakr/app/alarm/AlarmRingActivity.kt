@@ -16,7 +16,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
@@ -24,13 +25,20 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import com.wakr.app.ui.screens.AlarmTimeReadout
+import com.wakr.app.ui.screens.fittedAlarmTimeCap
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wakr.app.ui.missions.MissionScreen
@@ -147,7 +155,9 @@ class AlarmRingActivity : ComponentActivity() {
                 val mutedToken by AlarmService.muted.collectAsStateWithLifecycle()
                 val muted = mutedToken == (id to at)
                 val canOpenMission = mission != null || awaitingUnlock
-                BackHandler(enabled = showMission && canOpenMission) { showMission = false }
+                BackHandler(enabled = showMission && canOpenMission && !completing && confirmation == null) {
+                    showMission = false
+                }
                 val lightBars = MaterialTheme.colorScheme.surface.luminance() > .5f
                 SideEffect {
                     WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -155,21 +165,19 @@ class AlarmRingActivity : ComponentActivity() {
                         isAppearanceLightNavigationBars = lightBars
                     }
                 }
-                suspend fun closeRing(actionName: String, origin: Offset): Boolean {
-                    if (completing || confirmation != null) return false
+                suspend fun closeRing(actionName: String, origin: Offset, solvedMissionIndex: Int? = null) {
+                    if (completing || confirmation != null) return
                     completing = true
                     try {
                         val receipt = withContext(NonCancellable + Dispatchers.IO) {
-                            finishRing(applicationContext, id, at, actionName)
-                        } ?: return false
+                            finishRing(applicationContext, id, at, actionName, solvedMissionIndex)
+                        } ?: return
                         if (actionName == ClockActionReceiver.ACTION_EMERGENCY) finish()
                         else confirmation = RingConfirmation(receipt.snoozeMinutes, origin)
-                        return true
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Exception) {
                         android.util.Log.e("AlarmRingActivity", "Unable to complete alarm action", error)
-                        return false
                     } finally {
                         completing = false
                     }
@@ -193,8 +201,9 @@ class AlarmRingActivity : ComponentActivity() {
                             contentAlignment = Alignment.TopCenter,
                         ) {
                             Box(Modifier.widthIn(max = 600.dp).fillMaxSize()) {
-                                val snooze: (suspend (Offset) -> Boolean)? =
-                                    if (current.canSnooze()) ({ closeRing(ClockActionReceiver.ACTION_SNOOZE, it) }) else null
+                                val snooze: ((Offset) -> Unit)? = if (current.canSnooze()) ({ origin ->
+                                    scope.launch { closeRing(ClockActionReceiver.ACTION_SNOOZE, origin) }
+                                }) else null
                                 val snoozeMinutes = current.snoozeMinutes(settings.alarms.snoozeMinutes)
                                 val emergency: (() -> Unit)? = if (canOpenMission) ({
                                     scope.launch { closeRing(ClockActionReceiver.ACTION_EMERGENCY, Offset.Zero) }
@@ -208,17 +217,11 @@ class AlarmRingActivity : ComponentActivity() {
                                         name,
                                         if (mission == null) "Wake-up missions" else "Mission $step of $count · ${mission.type.title}",
                                         progress = (step - 1f) / count,
-                                        onBack = { showMission = false },
+                                        onBack = { if (!completing && confirmation == null) showMission = false },
                                         actions = {
-                                            if (snooze != null) {
-                                                var origin by remember { mutableStateOf(Offset.Zero) }
-                                                OutlinedButton(
-                                                    onClick = { scope.launch { snooze(origin) } },
-                                                    modifier = Modifier.onGloballyPositioned {
-                                                        origin = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f))
-                                                    },
-                                                ) { Text("Snooze · $snoozeMinutes min") }
-                                            }
+                                            if (snooze != null) RingActionPill(
+                                                "Snooze · $snoozeMinutes min", Icons.Outlined.Snooze, onAction = snooze,
+                                            )
                                             AlarmSoundActions(muted, mute, emergency)
                                         },
                                     ) {
@@ -229,8 +232,10 @@ class AlarmRingActivity : ComponentActivity() {
                                                     .requestDismissKeyguard(this@AlarmRingActivity, null)
                                             }) { Text("Unlock phone") }
                                         } else missionStates.SaveableStateProvider("mission:$id:$at:${current.missionIndex}") {
-                                            MissionChallenge(mission, (current.firstRingAt ?: at) xor mission.id, allowScannerFallback = true) {
-                                                lifecycleScope.launch {
+                                            MissionChallengeWithOrigin(mission, (current.firstRingAt ?: at) xor mission.id) { origin ->
+                                                if (step == count) {
+                                                    scope.launch { closeRing(ClockActionReceiver.ACTION_DISMISS, origin, current.missionIndex) }
+                                                } else lifecycleScope.launch {
                                                     val updated = RuntimeAlarms.update(applicationContext) { alarms -> alarms.map { candidate ->
                                                         if (candidate.id == id && candidate.ringingAt == at &&
                                                             candidate.missionIndex == current.missionIndex) {
@@ -247,10 +252,8 @@ class AlarmRingActivity : ComponentActivity() {
                                     }
                                 } else {
                                     AlarmRingingScreen(name, snoozeMinutes, snooze, canOpenMission, muted, mute, emergency) { origin ->
-                                        if (canOpenMission) {
-                                            showMission = true
-                                            false
-                                        } else closeRing(ClockActionReceiver.ACTION_DISMISS, origin)
+                                        if (canOpenMission) showMission = true
+                                        else scope.launch { closeRing(ClockActionReceiver.ACTION_DISMISS, origin) }
                                     }
                                 }
                             }
@@ -292,33 +295,79 @@ class AlarmRingActivity : ComponentActivity() {
 internal fun AlarmRingingScreen(
     label: String,
     snoozeMinutes: Int,
-    onSnooze: (suspend (Offset) -> Boolean)?,
+    onSnooze: ((Offset) -> Unit)?,
     hasMission: Boolean,
     muted: Boolean,
     onMute: () -> Unit,
     onEmergency: (() -> Unit)?,
-    onPrimary: suspend (Offset) -> Boolean,
+    onPrimary: (Offset) -> Unit,
 ) {
     val now by rememberWallTicker(60_000L)
     val time = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
     val colors = MaterialTheme.colorScheme
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp)) {
         val bodyHeight = maxHeight
-        val cap = minOf((maxWidth - 40.dp) * .71f, bodyHeight * .47f, 284.dp).coerceAtLeast(48.dp)
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = bodyHeight)
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(label, style = MaterialTheme.typography.headlineMediumEmphasized, color = colors.onSurface,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            RingingClockReadout(time, is24Hour, cap, Modifier.fillMaxWidth().padding(vertical = 16.dp))
-            Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                RingActionSlider(snoozeMinutes, onSnooze, if (hasMission) "Solve to dismiss" else "Dismiss", onPrimary)
-                AlarmSoundActions(muted, onMute, onEmergency)
+        val widthCap = fittedAlarmTimeCap(maxWidth)
+        SubcomposeLayout(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = bodyHeight)) { constraints ->
+            val loose = Constraints.fixedWidth(constraints.maxWidth)
+            val title = subcompose("title") {
+                Text(label, style = MaterialTheme.typography.headlineMediumEmphasized, color = colors.onSurface,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            }.single().measure(loose)
+            val controls = subcompose("controls") {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    RingActionPill(
+                        if (hasMission) "Solve to dismiss" else "Dismiss", Icons.Outlined.Check,
+                        primary = true, onAction = onPrimary,
+                    )
+                    RingActionPill(
+                        if (onSnooze == null) "Snooze unavailable" else "Snooze · $snoozeMinutes min",
+                        Icons.Outlined.Snooze, enabled = onSnooze != null, onAction = { onSnooze?.invoke(it) },
+                    )
+                    AlarmSoundActions(muted, onMute, onEmergency)
+                }
+            }.single().measure(loose)
+            val gap = 12.dp.roundToPx()
+            val available = constraints.minHeight - title.height - controls.height - gap * 2
+            val cap = minOf(widthCap, (available - 4.dp.roundToPx()).toDp().coerceAtLeast(56.dp))
+            val clock = subcompose("clock") {
+                RingingClockReadout(time, is24Hour, cap, Modifier.fillMaxWidth())
+            }.single().measure(loose)
+            val occupied = title.height + clock.height + controls.height + gap * 2
+            val height = maxOf(constraints.minHeight, occupied)
+            val controlsTop = height - controls.height
+            val clockTop = title.height + (controlsTop - title.height - clock.height) / 2
+            layout(constraints.maxWidth, height) {
+                title.placeRelative(0, 0)
+                clock.placeRelative(0, clockTop)
+                controls.placeRelative(0, controlsTop)
             }
+        }
+    }
+}
+
+@Composable
+private fun MissionChallengeWithOrigin(
+    mission: com.wakr.app.core.AlarmMission,
+    seed: Long,
+    onPass: (Offset) -> Unit,
+) {
+    var bounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var release by remember { mutableStateOf<Offset?>(null) }
+    Box(Modifier.fillMaxWidth().onGloballyPositioned { bounds = it }.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val up = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.previousPressed && !it.pressed }
+                if (up != null) release = bounds?.takeIf { it.isAttached }?.localToRoot(up.position)
+            }
+        }
+    }) {
+        MissionChallenge(mission, seed, allowScannerFallback = true) {
+            val center = bounds?.takeIf { it.isAttached }?.let {
+                it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f))
+            }
+            onPass(release ?: center ?: Offset.Zero)
         }
     }
 }
@@ -339,13 +388,11 @@ internal fun RingingClockReadout(
 private fun AlarmSoundActions(muted: Boolean, onMute: () -> Unit, onEmergency: (() -> Unit)?) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedButton(onClick = onMute, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)) {
-            RingPillLabel(
-                icon = if (muted) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
-                title = if (muted) "Unmute" else "Mute",
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        RingActionPill(
+            title = if (muted) "Unmute" else "Mute",
+            icon = if (muted) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+            onAction = { onMute() },
+        )
         if (onEmergency != null) EmergencyStopButton(onEmergency)
     }
 }

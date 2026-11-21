@@ -58,6 +58,20 @@ class PhaseThreeAlarmTest {
         assertNull(withoutMissions.finishUserOccurrence(7, at, null)!!.ringingAt)
     }
 
+    @Test fun finalMissionDismissesAtomicallyAndRejectsOlderCallbacks() {
+        assertSame(ring, ring.finishAfterMission(7, at, 0))
+        val final = ring.copy(missionIndex = 1)
+        assertSame(final, final.finishAfterMission(7, at - 1, 1))
+        assertSame(final, final.finishAfterMission(7, at, 0))
+        val missingPrivateMission = final.copy(privateMissionCount = 3)
+        assertSame(missingPrivateMission, missingPrivateMission.finishAfterMission(7, at, 1))
+        val dismissed = final.finishAfterMission(7, at, 1)!!
+        assertNull(dismissed.ringingAt)
+        assertSame(dismissed, dismissed.finishAfterMission(7, at, 1))
+        val temporary = final.copy(wake = final.wake.copy(deleteAfterDismiss = true))
+        assertNull(temporary.finishAfterMission(7, at, 1))
+    }
+
     @Test fun emergencyOnlyStopsTheMatchingUnfinishedMission() {
         assertSame(ring, ring.finishEmergencyOccurrence(7, at - 1))
         val completed = ring.copy(missionIndex = ring.missions.size)

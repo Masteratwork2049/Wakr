@@ -1,23 +1,9 @@
 package com.wakr.app.ui.sheets
 
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import com.wakr.app.core.Alarm
 import com.wakr.app.data.WeekStart
-import com.wakr.app.data.order
-import kotlinx.coroutines.launch
-import java.time.LocalTime
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewAlarmPickerSheet(
     initial: Alarm,
@@ -26,93 +12,6 @@ fun NewAlarmPickerSheet(
     onDismiss: () -> Unit,
     onSave: (Alarm) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    var closing by remember { mutableStateOf(false) }
-    fun closeThen(action: () -> Unit) {
-        if (closing) return
-        closing = true
-        scope.launch {
-            try {
-                sheetState.hide()
-                if (!sheetState.isVisible) action()
-            } finally { closing = false }
-        }
-    }
-    val context = LocalContext.current
-    val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
-
-    var hour by rememberSaveable { mutableStateOf(initial.time.hour) }
-    var minute by rememberSaveable { mutableStateOf(initial.time.minute) }
-    var pm by rememberSaveable { mutableStateOf(initial.time.hour >= 12) }
-    var editingHour by rememberSaveable { mutableStateOf(true) }
-    var label by rememberSaveable { mutableStateOf(initial.label.ifBlank { "Alarm" }) }
-    var days by remember { mutableStateOf(initial.days) }
-    var vibrate by rememberSaveable { mutableStateOf(initial.vibrate) }
-    var soundUri by rememberSaveable { mutableStateOf(initial.soundUri) }
-
-    var wake by androidx.compose.runtime.saveable.rememberSaveable(initial.id, stateSaver = com.wakr.app.ui.sheets.WakeDraftSaver) { mutableStateOf(initial.wake) }
-    var missions by androidx.compose.runtime.saveable.rememberSaveable(initial.id,
-        stateSaver = com.wakr.app.ui.sheets.MissionDraftSaver) { mutableStateOf(initial.missions) }
-    val openSoundSelector = rememberAlarmSoundSelector(soundUri) { soundUri = it }
-
-    val soundLabel by androidx.compose.runtime.produceState(initialValue = "Default", key1 = soundUri, key2 = context) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            com.wakr.app.ui.sheets.alarmSoundTitle(context, soundUri)
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        shape = AlarmSheetShape,
-        dragHandle = { AlarmEditorDragHandle() },
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-    ) {
-        AlarmPickerSheetContent(
-            wake = wake, setWake = { wake = it }, setDays = { days = it },
-            missions = missions, onMissions = { missions = it },
-            modal = true, initialRelative = relative,
-            title = "New Alarm",
-            hour = hour,
-            minute = minute,
-            is24Hour = is24Hour,
-            pm = pm,
-            editingHour = editingHour,
-            label = label,
-            days = days,
-            weekOrder = weekStart.order(systemFirstDay()),
-            vibrate = vibrate,
-            soundLabel = soundLabel,
-            showDelete = false,
-            onHourChange = { hour = it },
-            onMinuteChange = { minute = it },
-            onPmChange = { pm = it },
-            onEditingHourChange = { editingHour = it },
-            onLabelChange = { label = it },
-            onToggleDay = { day -> days = if (day in days) days - day else days + day },
-            onVibrateChange = { vibrate = it },
-            onSoundClick = openSoundSelector,
-            onCancel = {
-                closeThen(onDismiss)
-            },
-            onSave = { duplicate ->
-                val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
-                val updated = initial.copy(
-                    id = if (duplicate) 0 else initial.id,
-                    missions = missions,
-                    wake = wake.forAlarmSave(days, LocalTime.of(saveHour, minute)),
-                    pausedByGroup = false,
-                    time = LocalTime.of(saveHour, minute),
-                    label = label.trim(),
-                    days = days,
-                    enabled = true,
-                    vibrate = vibrate,
-                    soundUri = soundUri,
-                )
-                closeThen { onSave(updated) }
-            },
-            onDelete = {},
-        )
-    }
+    AlarmEditPage(initial, weekStart, onDismiss, onSave, onDelete = null,
+        creating = true, relative = relative)
 }

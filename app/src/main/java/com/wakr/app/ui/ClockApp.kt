@@ -14,6 +14,7 @@ import com.wakr.app.ui.missions.MissionChallenge
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
@@ -79,6 +80,7 @@ import androidx.compose.foundation.layout.statusBars
 import com.wakr.app.ui.screens.SelectionToolbar
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -688,20 +690,23 @@ internal fun UnlockAlarmDialog(label: String, onDismiss: () -> Unit, onUnlock: (
 @Composable
 internal fun AlarmLayoutPill(visible: Boolean, listLayout: Boolean, onToggle: () -> Unit) {
     val motion = android.animation.ValueAnimator.areAnimatorsEnabled()
-    AnimatedVisibility(
-        visible = visible,
-        enter = if (motion) fadeIn(tween(180, easing = FastOutSlowInEasing)) +
-            slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 5 }
-        else androidx.compose.animation.EnterTransition.None,
-        exit = if (motion) fadeOut(tween(150, easing = FastOutSlowInEasing)) +
-            slideOutHorizontally(tween(200, easing = FastOutSlowInEasing)) { it / 5 }
-        else androidx.compose.animation.ExitTransition.None,
-    ) {
-        Box(if (visible) Modifier else Modifier.clearAndSetSemantics {}) {
-            com.wakr.app.ui.sheets.SheetHeaderButton(
-                text = if (listLayout) "Grid view" else "List view", primary = false,
-                onClick = { if (visible) onToggle() },
-            )
+    // Keep the action slot measured while the pill moves so the app bar never reflows.
+    val slotWidth = 112.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
+    Box(Modifier.widthIn(min = slotWidth).clipToBounds()) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enter = if (motion) slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { it }
+            else androidx.compose.animation.EnterTransition.None,
+            exit = if (motion) slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { it }
+            else androidx.compose.animation.ExitTransition.None,
+        ) {
+            Box(if (visible) Modifier else Modifier.clearAndSetSemantics {}) {
+                com.wakr.app.ui.sheets.SheetHeaderButton(
+                    text = if (listLayout) "Grid view" else "List view", primary = false, opaque = true,
+                    onClick = { if (visible) onToggle() },
+                )
+            }
         }
     }
 }

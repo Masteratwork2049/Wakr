@@ -26,3 +26,12 @@ internal fun Alarm.finishUserOccurrence(id: Long, at: Long, snoozeUntil: Long?):
 /** Only an active, unfinished mission offers an emergency stop. */
 internal fun Alarm.finishEmergencyOccurrence(id: Long, at: Long): Alarm? =
     if (missionsRemaining) finishOccurrence(id, at, null) else this
+
+/** Apply the final solved mission and dismissal in the same occurrence update. */
+internal fun Alarm.finishAfterMission(id: Long, at: Long, solvedIndex: Int): Alarm? {
+    if (this.id != id || ringingAt != at || missionIndex != solvedIndex ||
+        ringMissions.lastIndex != solvedIndex || solvedIndex < 0 ||
+        privateMissionCount > solvedIndex + 1
+    ) return this
+    return copy(missionIndex = solvedIndex + 1).finishUserOccurrence(id, at, null)
+}

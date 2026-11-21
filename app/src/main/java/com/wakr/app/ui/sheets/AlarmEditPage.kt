@@ -22,6 +22,8 @@ fun AlarmEditPage(
     onSave: (Alarm) -> Unit,
     onDelete: ((Long) -> Unit)?,
     onSkip: ((Long) -> Unit)? = null,
+    creating: Boolean = false,
+    relative: Boolean = false,
 ) {
     val context = LocalContext.current
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
@@ -30,7 +32,7 @@ fun AlarmEditPage(
     var minute by rememberSaveable(initial.id) { mutableStateOf(initial.time.minute) }
     var pm by rememberSaveable(initial.id) { mutableStateOf(initial.time.hour >= 12) }
     var editingHour by rememberSaveable(initial.id) { mutableStateOf(true) }
-    var label by rememberSaveable(initial.id) { mutableStateOf(initial.label) }
+    var label by rememberSaveable(initial.id) { mutableStateOf(if (creating) initial.label.ifBlank { "Alarm" } else initial.label) }
     var days by remember(initial.id) { mutableStateOf(initial.days) }
     var vibrate by rememberSaveable(initial.id) { mutableStateOf(initial.vibrate) }
     var soundUri by rememberSaveable(initial.id) { mutableStateOf(initial.soundUri) }
@@ -46,12 +48,14 @@ fun AlarmEditPage(
         }
     }
 
-    AlarmFullscreenDialog(onDismiss) {
+    AlarmFullscreenDialog(onDismiss, slideVertically = true) { closeAfter ->
         AlarmPickerSheetContent(
             wake = wake, setWake = { wake = it }, setDays = { days = it },
             missions = missions, onMissions = { missions = it },
             fullscreen = true,
-            title = "Edit Alarm",
+            title = if (creating) "New Alarm" else "Edit Alarm",
+            initialRelative = relative,
+            creating = creating,
             hour = hour,
             minute = minute,
             is24Hour = is24Hour,
@@ -71,7 +75,7 @@ fun AlarmEditPage(
             onToggleDay = { day -> days = if (day in days) days - day else days + day },
             onVibrateChange = { vibrate = it },
             onSoundClick = openSoundSelector,
-            onCancel = onDismiss,
+            onCancel = { closeAfter(onDismiss) },
             onSave = { duplicate ->
                 val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
                 val updated = initial.copy(
@@ -83,13 +87,15 @@ fun AlarmEditPage(
                     vibrate = vibrate,
                     soundUri = soundUri,
                 ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
-                onSave(updated)
+                closeAfter { onSave(updated) }
             },
             onSkip = onSkip?.takeIf { initial.nextFire(java.time.ZonedDateTime.now()) != null }
-                ?.let { skip -> { skip(initial.id) } },
+                ?.let { skip -> { closeAfter { skip(initial.id) } } },
             onDelete = {
-                onDelete?.invoke(initial.id)
-                onDismiss()
+                closeAfter {
+                    onDelete?.invoke(initial.id)
+                    onDismiss()
+                }
             },
         )
     }

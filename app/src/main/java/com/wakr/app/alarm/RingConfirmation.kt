@@ -2,10 +2,10 @@ package com.wakr.app.alarm
 
 import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,9 +34,13 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.hypot
+
+internal const val RING_CONFIRMATION_HOLD_MS = 3_000L
+private val RevealEasing = CubicBezierEasing(.15f, .55f, .25f, 1f)
 
 internal data class RingConfirmation(val snoozeMinutes: Int?, val origin: Offset) {
     val message: String
@@ -59,12 +63,12 @@ internal fun RingConfirmationOverlay(result: RingConfirmation, onFinished: () ->
     val finish by rememberUpdatedState(onFinished)
 
     LaunchedEffect(result) {
-        launch {
-            spread.animateTo(1f, tween(if (motion) 440 else 140, easing = FastOutSlowInEasing))
+        coroutineScope {
+            launch { spread.animateTo(1f, tween(if (motion) 440 else 140, easing = RevealEasing)) }
+            delay(if (motion) 155 else 80)
+            textAlpha.animateTo(1f, tween(170, easing = LinearOutSlowInEasing))
         }
-        delay(if (motion) 210 else 100)
-        textAlpha.animateTo(1f, tween(180, easing = LinearOutSlowInEasing))
-        delay(650)
+        delay(RING_CONFIRMATION_HOLD_MS)
         finish()
     }
 
@@ -75,14 +79,16 @@ internal fun RingConfirmationOverlay(result: RingConfirmation, onFinished: () ->
             }
         },
     ) {
-        Canvas(Modifier.fillMaxSize().onGloballyPositioned { overlayOrigin = it.positionInRoot() }) {
-            val origin = result.origin - overlayOrigin
-            val center = Offset(origin.x.coerceIn(0f, size.width), origin.y.coerceIn(0f, size.height))
-            if (motion) {
+        Box(Modifier.fillMaxSize().onGloballyPositioned { overlayOrigin = it.positionInRoot() }
+            .drawWithCache {
+                val origin = result.origin - overlayOrigin
+                val center = Offset(origin.x.coerceIn(0f, size.width), origin.y.coerceIn(0f, size.height))
                 val radius = hypot(maxOf(center.x, size.width - center.x), maxOf(center.y, size.height - center.y))
-                drawCircle(fill, radius = radius * spread.value, center = center)
-            } else drawRect(fill, alpha = spread.value)
-        }
+                onDrawBehind {
+                    if (motion && spread.value < 1f) drawCircle(fill, radius = radius * spread.value, center = center)
+                    else drawRect(fill, alpha = spread.value)
+                }
+            })
         Box(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,

@@ -1170,6 +1170,9 @@ internal fun DeleteItemsConfirmationSheet(
 private const val ALARM_DIGIT_BOTTOM_BLEED_DP = 2
 
 @Composable
+internal fun fittedAlarmTimeCap(width: Dp): Dp = fittedTime("PM", width, 5.dp).cap
+
+@Composable
 internal fun AlarmTimeReadout(
     time: java.time.LocalTime, use24h: Boolean, capHeight: Dp,
     ink: Color, weight: Int, modifier: Modifier = Modifier,
