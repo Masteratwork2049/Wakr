@@ -19,8 +19,9 @@ Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, a
 ## Phase 2 UI refinements
 
 - Extend **Duplicate alarm** to the full width of the editor beneath **Alarm Name** and add a copy icon with two overlapping rounded rectangles on the left. The editor and the alarm-card action menu preserve the original alarm’s on/off state. The copy has its own identity and schedule.
-- In List view, align the time on the left, place AM or PM immediately after it in 12-hour mode, and put the alarm name to the right. Place the weekday letters directly below the time.
-- Use Wakr’s pill styling for the **Flash** and **Auto-delete after dismissal** switch rows and for the **Grid view** and **List view** control beside Settings.
+- In List view, align the time on the left, place AM or PM immediately after it in 12-hour mode, and put the alarm name to the right. Place smaller weekday letters directly below the larger time. In Grid view, center the name and any status tag in the space above the time.
+- Use the same layout for all alarm option rows, with an on/off switch on the right for **Flash** and **Auto-delete after dismissal**. Use a pill for the **Grid view** and **List view** control beside Settings.
+- Tap the selected hour or minute to open the numeric keyboard. Keep swipe-to-scroll on both wheels and validate the number against the active time format.
 
 ## Phase 3 follow-up · Wake-up missions and pre-ring lock
 

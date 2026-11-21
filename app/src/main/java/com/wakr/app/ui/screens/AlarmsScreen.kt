@@ -937,8 +937,11 @@ private fun AlarmTile(
             } else {
                 val gridFit = checkNotNull(fit)
                 Box(Modifier.fillMaxSize()) {
-                    Column(Modifier.align(Alignment.TopCenter).padding(start = 38.dp, end = 38.dp, top = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        Modifier.align(Alignment.TopCenter).height(inset + textHeight).padding(horizontal = 38.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
                         if (alarm.label.isNotBlank()) Text(alarm.label,
                             color = animatedInk, style = MaterialTheme.typography.titleSmall,
                             maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -1003,7 +1006,7 @@ private fun AlarmListRow(
     weight: Int,
     toggle: @Composable () -> Unit,
 ) {
-    val timeCap = 28.dp
+    val timeCap = 36.dp
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1017,7 +1020,7 @@ private fun AlarmListRow(
                 if (meridiem.isNotEmpty()) Text(meridiem, Modifier.padding(start = 3.dp),
                     color = ink, style = MaterialTheme.typography.labelMedium)
             }
-            DayLetters(alarm, order, ink)
+            DayLetters(alarm, order, ink, blockWidth = 66.dp, capHeight = 14.dp)
         }
         Column(Modifier.weight(1f).align(Alignment.Top), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (alarm.label.isNotBlank()) {
@@ -1353,11 +1356,17 @@ private fun AnimatedAlarmDigit(
  * letters: block width fixed, tracking down, glyphs wider.
  */
 @Composable
-private fun DayLetters(alarm: Alarm, order: List<DayOfWeek>, ink: Color, blockWidth: Dp = DAY_BLOCK_DP.dp) {
+private fun DayLetters(
+    alarm: Alarm,
+    order: List<DayOfWeek>,
+    ink: Color,
+    blockWidth: Dp = DAY_BLOCK_DP.dp,
+    capHeight: Dp = if (blockWidth < 80.dp) 19.dp else DAY_CAP_DP.dp,
+) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val bold = ClockFace.capitals(if (blockWidth < 80.dp) 19.dp else DAY_CAP_DP.dp, ClockFace.CONDENSED, weight = DAY_WEIGHT_ON)
-    val light = ClockFace.capitals(if (blockWidth < 80.dp) 19.dp else DAY_CAP_DP.dp, ClockFace.CONDENSED, weight = DAY_WEIGHT_OFF)
+    val bold = ClockFace.capitals(capHeight, ClockFace.CONDENSED, weight = DAY_WEIGHT_ON)
+    val light = ClockFace.capitals(capHeight, ClockFace.CONDENSED, weight = DAY_WEIGHT_OFF)
 
     val text = remember(alarm.days, alarm.isOneShot, order, ink, bold, light) {
         buildAnnotatedString {
@@ -1384,7 +1393,7 @@ private fun DayLetters(alarm: Alarm, order: List<DayOfWeek>, ink: Color, blockWi
         blockWidth.toPx() / measurer.measure(text, style).size.width
     }
 
-    StretchedCaps(text = text, style = style, capHeight = if (blockWidth < 80.dp) 19.dp else DAY_CAP_DP.dp, scaleX = scaleX)
+    StretchedCaps(text = text, style = style, capHeight = capHeight, scaleX = scaleX)
 }
 
 /** Weight is the state, the same way it is on the numerals above. Not a second colour ramp. */

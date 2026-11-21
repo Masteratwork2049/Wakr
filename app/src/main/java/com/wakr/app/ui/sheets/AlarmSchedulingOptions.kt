@@ -62,7 +62,7 @@ internal fun AlarmSchedulingOptions(
     AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
     if (once) {
         AlarmOptionRow("Schedule alarm", Icons.Outlined.CalendarMonth, wake.scheduledDateEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Next occurrence") { dialog = "Schedule alarm" }
-        AlarmOptionSwitchPill("Auto-delete after dismissal", "Show as Temporary on the Alarms tab", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
+        AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
             setWake(wake.copy(deleteAfterDismiss = it))
         }
     } else AlarmOptionRow("Pause until", Icons.Outlined.CalendarMonth, wake.pausedUntilEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "Off") { dialog = "Pause until" }
@@ -72,7 +72,7 @@ internal fun AlarmSchedulingOptions(
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)
     }
     if (hasFlash) {
-        AlarmOptionSwitchPill("Flash", "Light the camera LED while ringing", Icons.Outlined.FlashlightOn, wake.flashEnabled) {
+        AlarmOptionSwitchRow("Flash", Icons.Outlined.FlashlightOn, wake.flashEnabled) {
             setWake(wake.copy(flashEnabled = it))
         }
     }

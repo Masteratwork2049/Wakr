@@ -3,6 +3,21 @@ package com.wakr.app.ui.sheets
 import com.wakr.app.ui.responsive.persistentScrollEdges
 import com.wakr.app.ui.screens.progressiveListEdgeMask
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -214,6 +229,7 @@ fun AlarmPickerSheetContent(
                     modifier = Modifier.weight(1f),
                     values = if (is24Hour) (0..23).toList() else (1..12).toList(),
                     selected = if (is24Hour) hour else hour12(hour),
+                    inputLabel = "Hour",
                     format = { "%02d".format(it) },
                     onSelected = {
                         if (is24Hour) onHourChange(it) else {
@@ -231,6 +247,7 @@ fun AlarmPickerSheetContent(
                     modifier = Modifier.weight(1f),
                     values = (0..59).toList(),
                     selected = minute,
+                    inputLabel = "Minute",
                     format = { "%02d".format(it) },
                     onSelected = {
                         onMinuteChange(it)
@@ -315,6 +332,7 @@ internal fun AlarmWheel(
     values: List<Int>,
     selected: Int,
     format: (Int) -> String,
+    inputLabel: String? = null,
     onSelected: (Int) -> Unit,
 ) {
     if (values.isEmpty()) return
@@ -338,6 +356,7 @@ internal fun AlarmWheel(
     val fling = rememberSnapFlingBehavior(state)
     val view = LocalView.current
     val selectCurrent by rememberUpdatedState(onSelected)
+    var showNumberEntry by rememberSaveable { mutableStateOf(false) }
     var lastReportedIndex by remember(state) { mutableIntStateOf(initialVirtualIndex) }
 
     LaunchedEffect(state, values) {
@@ -429,7 +448,12 @@ internal fun AlarmWheel(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(TickerItemHeight),
+                        .height(TickerItemHeight)
+                        .then(if (centered && inputLabel != null) {
+                            Modifier.clickable(role = Role.Button, onClickLabel = "Type ${inputLabel.lowercase()}") {
+                                showNumberEntry = true
+                            }
+                        } else Modifier),
                     contentAlignment = Alignment.Center,
                 ) {
                     Numerals(
@@ -477,6 +501,55 @@ internal fun AlarmWheel(
                 ),
         )
     }
+
+    if (showNumberEntry && inputLabel != null) {
+        AlarmWheelNumberDialog(inputLabel, format(selected), values, onDismiss = { showNumberEntry = false }) {
+            onSelected(it)
+            showNumberEntry = false
+        }
+    }
+}
+
+@Composable
+private fun AlarmWheelNumberDialog(
+    label: String,
+    initial: String,
+    values: List<Int>,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    var entry by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length)))
+    }
+    val value = entry.text.toIntOrNull()?.takeIf { it in values }
+    val focus = remember { FocusRequester() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Type ${label.lowercase()}") },
+        text = {
+            val keyboard = LocalSoftwareKeyboardController.current
+            OutlinedTextField(
+                value = entry,
+                onValueChange = { input ->
+                    if (input.text.length <= 2 && input.text.all(Char::isDigit)) entry = input
+                },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                label = { Text(label) },
+                supportingText = { Text("${values.first()}–${values.last()}") },
+                isError = entry.text.isNotEmpty() && value == null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { value?.let(onSelect) }),
+            )
+            LaunchedEffect(focus) {
+                focus.requestFocus()
+                withFrameNanos { }
+                keyboard?.show()
+            }
+        },
+        confirmButton = { TextButton(enabled = value != null, onClick = { value?.let(onSelect) }) { Text("Set") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
@@ -647,14 +720,7 @@ internal fun AlarmOptionRow(
     value: String? = null,
     onClick: () -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().elasticClickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        OptionIconBubble(icon)
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+    AlarmOptionLayout(title, icon, Modifier.fillMaxWidth().elasticClickable(onClick = onClick)) {
         if (value != null) Text(value, Modifier.weight(1f),
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -665,28 +731,34 @@ internal fun AlarmOptionRow(
 }
 
 @Composable
-internal fun AlarmOptionSwitchPill(
+internal fun AlarmOptionSwitchRow(
     title: String,
-    subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     checked: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
+    AlarmOptionLayout(title, icon,
+        Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+    ) {
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun AlarmOptionLayout(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier,
+    trailing: @Composable RowScope.() -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f))
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         OptionIconBubble(icon)
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = null)
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        trailing()
     }
 }
 
