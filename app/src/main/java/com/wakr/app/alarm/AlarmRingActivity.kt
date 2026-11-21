@@ -160,7 +160,7 @@ class AlarmRingActivity : ComponentActivity() {
                 var showMission by rememberSaveable(id, at) { mutableStateOf(false) }
                 val missionStates = rememberSaveableStateHolder()
                 val muteState by AlarmService.mute.collectAsStateWithLifecycle()
-                val muteLabel = timedMuteLabel(current.wake.muteDurationSec, muteState?.takeIf { it.occurrence == (id to at) })
+                val muteLabel = timedMuteLabel(current.wake, muteState?.takeIf { it.occurrence == (id to at) })
                 val canOpenMission = mission != null || awaitingUnlock
                 BackHandler(enabled = showMission && canOpenMission && !completing && confirmation == null) {
                     showMission = false
@@ -299,10 +299,11 @@ internal fun AlarmRingingScreen(
     muteLabel: String?,
     onMute: () -> Unit,
     onEmergency: ((Offset) -> Unit)?,
+    previewTime: java.time.LocalTime? = null,
     onPrimary: (Offset) -> Unit,
 ) {
     val now by rememberWallTicker(60_000L)
-    val time = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+    val time = previewTime ?: java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
     val is24Hour = com.wakr.app.ui.rememberSystem24HourFormat()
     val colors = MaterialTheme.colorScheme
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -383,24 +384,26 @@ internal fun RingingClockReadout(
 }
 
 @Composable
-private fun timedMuteLabel(duration: Int, mute: AlarmMute?): String? {
-    if (duration == 0) return null
-    if (mute == null) return "Mute · ${duration}s"
-    val until = mute.untilElapsedMs ?: return null
-    return key(until) {
-        val remaining by produceState((until - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L), until) {
+internal fun timedMuteLabel(wake: com.wakr.app.core.WakeOptions, mute: AlarmMute?): String? {
+    if (wake.muteDurationSec == 0 || wake.maxMutes == 0) return null
+    if (mute == null) return "Mute · ${wake.muteDurationSec}s"
+    val until = mute.untilElapsedMs
+    val deadline = until ?: mute.availableAgainAtElapsedMs ?: return null
+    return key(deadline) {
+        val remaining by produceState((deadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L), deadline) {
             while (true) {
-                value = (until - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+                value = (deadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L)
                 if (value == 0L) break
-                delay((value - 1) % 1_000 + 1)
+                delay(if (until == null) value else (value - 1) % 1_000 + 1)
             }
         }
-        "Unmute · ${(remaining + 999) / 1_000}s"
+        if (until != null && remaining > 0) "Unmute · ${(remaining + 999) / 1_000}s"
+        else if (until == null && remaining == 0L) "Mute · ${wake.muteDurationSec}s" else null
     }
 }
 
 @Composable
-private fun AlarmSoundActions(muteLabel: String?, onMute: () -> Unit, onEmergency: ((Offset) -> Unit)?) {
+internal fun AlarmSoundActions(muteLabel: String?, onMute: () -> Unit, onEmergency: ((Offset) -> Unit)?) {
     var lastLabel by remember { mutableStateOf("Mute") }
     SideEffect { if (muteLabel != null) lastLabel = muteLabel }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,

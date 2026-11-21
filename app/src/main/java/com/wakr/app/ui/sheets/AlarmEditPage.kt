@@ -1,6 +1,7 @@
 package com.wakr.app.ui.sheets
 
 import com.wakr.app.core.asDuplicate
+import com.wakr.app.alarm.AlarmPreview
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +49,14 @@ fun AlarmEditPage(
         }
     }
 
+    var preview by remember { mutableStateOf<Alarm?>(null) }
+    fun draft(): Alarm {
+        val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
+        val time = LocalTime.of(saveHour, minute)
+        return initial.copy(missions = missions, wake = wake.forAlarmSave(days, time), time = time,
+            label = label.trim(), days = days, vibrate = vibrate, soundUri = soundUri)
+    }
+
     AlarmFullscreenDialog(onDismiss, slideVertically = true) { closeAfter ->
         AlarmPickerSheetContent(
             wake = wake, setWake = { wake = it }, setDays = { days = it },
@@ -76,17 +85,9 @@ fun AlarmEditPage(
             onVibrateChange = { vibrate = it },
             onSoundClick = openSoundSelector,
             onCancel = { closeAfter(onDismiss) },
+            onPreview = { preview = draft() },
             onSave = { duplicate ->
-                val saveHour = if (is24Hour) hour else if (pm) (hour % 12) + 12 else hour % 12
-                val updated = initial.copy(
-                    missions = missions,
-                    wake = wake.forAlarmSave(days, LocalTime.of(saveHour, minute)),
-                    time = LocalTime.of(saveHour, minute),
-                    label = label.trim(),
-                    days = days,
-                    vibrate = vibrate,
-                    soundUri = soundUri,
-                ).let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
+                val updated = draft().let { if (duplicate) it.asDuplicate() else it.copy(enabled = true, pausedByGroup = false) }
                 closeAfter { onSave(updated) }
             },
             onSkip = onSkip?.takeIf { initial.nextFire(java.time.ZonedDateTime.now()) != null }
@@ -99,4 +100,5 @@ fun AlarmEditPage(
             },
         )
     }
+    preview?.let { alarm -> AlarmPreview(alarm) { preview = null } }
 }

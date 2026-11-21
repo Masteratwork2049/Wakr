@@ -902,19 +902,8 @@ private fun AlarmListRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        AlarmListTime(alarm, order, hour, meridiem, ink, weight, timeCap, rowScale, Modifier.align(Alignment.Top))
-        Column(Modifier.weight(1f).align(Alignment.Top), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            if (alarm.label.isNotBlank()) {
-                Box(Modifier.heightIn(min = timeCap + ALARM_DIGIT_BOTTOM_BLEED_DP.dp), contentAlignment = Alignment.CenterStart) {
-                    Text(alarm.label, color = ink, style = MaterialTheme.typography.titleMedium,
-                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
-            }
-            if (badge.isNotEmpty()) Text(badge, color = ink,
-                style = MaterialTheme.typography.labelMedium, maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
-        }
+        AlarmListTime(alarm, order, hour, meridiem, badge, selected, ink, weight, timeCap, rowScale,
+            Modifier.weight(1f).align(Alignment.Top))
         toggle()
     }
 }
@@ -922,7 +911,7 @@ private fun AlarmListRow(
 @Composable
 private fun AlarmListTime(
     alarm: Alarm, order: List<DayOfWeek>, hour: Int, meridiem: String,
-    ink: Color, weight: Int, timeCap: Dp, rowScale: Float, modifier: Modifier,
+    badge: String, selected: Boolean, ink: Color, weight: Int, timeCap: Dp, rowScale: Float, modifier: Modifier,
 ) {
     val numeralStyle = ClockFace.numerals(timeCap, ClockFace.CONDENSED, weight, tracking = ClockFace.CONDENSED_TRACKING)
     val firstInk = rememberInkBounds((hour / 10).toString(), numeralStyle)
@@ -946,12 +935,27 @@ private fun AlarmListTime(
         val days = subcompose("weekdays") {
             DayLetters(alarm, order, ink, blockWidth = width.toDp(), capHeight = 14.dp * rowScale, alignInk = true)
         }.single().measure(loose)
+        val nameX = left + days.width + 8.dp.roundToPx()
+        val details = subcompose("details") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (alarm.label.isNotBlank()) Text("·", color = ink)
+                Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (alarm.label.isNotBlank()) Text(alarm.label, color = ink, style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    if (badge.isNotEmpty()) Text(badge, color = ink, style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
+            }
+        }.single().measure(loose.copy(maxWidth = (loose.maxWidth - nameX).coerceAtLeast(0)))
         val timeHeight = maxOf(digits.height, period?.height ?: 0)
         val dayTop = timeHeight + (6.dp * rowScale).roundToPx()
-        layout(digits.width + (period?.width ?: 0), dayTop + days.height) {
-            digits.placeRelative(0, (timeHeight - digits.height) / 2)
-            period?.placeRelative(digits.width, (timeHeight - period.height) / 2)
-            days.placeRelative(left, dayTop)
+        val lowerHeight = maxOf(days.height, details.height)
+        layout(constraints.maxWidth, dayTop + lowerHeight) {
+            digits.placeRelative(0, timeHeight - digits.height)
+            period?.placeRelative(digits.width, timeHeight - period.height)
+            days.placeRelative(left, dayTop + (lowerHeight - days.height) / 2)
+            details.placeRelative(nameX, dayTop + (lowerHeight - details.height) / 2)
         }
     }
 }

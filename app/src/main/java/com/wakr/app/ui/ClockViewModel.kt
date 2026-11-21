@@ -149,7 +149,9 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
 
     /* ── Alarms ─────────────────────────────────────────────────────────────────────────────── */
 
-    private data class AlarmPermit(val occurrence: Long, val expiresAt: Long)
+    private data class AlarmPermit(
+        val occurrence: Long, val expiresAt: Long, val missions: List<com.wakr.app.core.AlarmMission>, val window: Int,
+    )
     private val alarmPermits = mutableMapOf<Long, AlarmPermit>()
 
     fun needsPreRingChallenge(alarm: Alarm): Boolean {
@@ -157,7 +159,8 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         if (!alarm.isPreRingProtected(now)) return false
         val permit = alarmPermits[alarm.id]
         return permit == null || permit.expiresAt < System.currentTimeMillis() ||
-            permit.occurrence != alarm.nextFire(now)?.toInstant()?.toEpochMilli()
+            permit.occurrence != alarm.nextFire(now)?.toInstant()?.toEpochMilli() ||
+            permit.missions != alarm.wake.unlockMissions || permit.window != alarm.wake.lockBeforeRingMin
     }
 
     fun authorizePreRingChanges(alarms: List<Alarm>) {
@@ -165,7 +168,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         val expiresAt = System.currentTimeMillis() + 120_000
         alarmPermits.entries.removeAll { it.value.expiresAt < System.currentTimeMillis() }
         alarms.forEach { alarm ->
-            alarm.nextFire(now)?.toInstant()?.toEpochMilli()?.let { alarmPermits[alarm.id] = AlarmPermit(it, expiresAt) }
+            alarm.nextFire(now)?.toInstant()?.toEpochMilli()?.let { alarmPermits[alarm.id] = AlarmPermit(it, expiresAt, alarm.wake.unlockMissions, alarm.wake.lockBeforeRingMin) }
         }
     }
 

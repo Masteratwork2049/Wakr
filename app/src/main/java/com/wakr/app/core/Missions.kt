@@ -10,10 +10,12 @@ internal val Alarm.missionsRemaining: Boolean
 
 internal fun Alarm.canSnooze(): Boolean = wake.maxSnoozes?.let { it > 0 && snoozeCount < it } ?: true
 
+internal const val DEFAULT_PRE_RING_LOCK_MINUTES = 15
+
 internal fun Alarm.isPreRingProtected(now: ZonedDateTime = ZonedDateTime.now()): Boolean {
-    if (wake.lockBeforeRingMin <= 0) return false
+    if (wake.unlockMissions.isEmpty() && !hasPrivateUnlockMissions) return false
     val next = nextFire(now) ?: return false
-    return !next.isAfter(now.plusMinutes(wake.lockBeforeRingMin.toLong()))
+    return !next.isAfter(now.plusMinutes((wake.lockBeforeRingMin.takeIf { it > 0 } ?: DEFAULT_PRE_RING_LOCK_MINUTES).toLong()))
 }
 
 internal data class MathProblem(val expression: String, val answer: Int)

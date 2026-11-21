@@ -50,6 +50,7 @@ data class Alarm(
     val privateMissionCount: Int = 0,
     val isWakeCheckRetry: Boolean = false,
     val missionMuteCount: Int? = null,
+    val hasPrivateUnlockMissions: Boolean = false,
 ) {
     val isOneShot: Boolean get() = days.isEmpty()
 

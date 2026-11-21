@@ -54,6 +54,9 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("stillAwakeDelayMin", stillAwakeDelayMin)
     .put("muteDurationSec", muteDurationSec)
     .put("emergencyStopEnabled", emergencyStopEnabled)
+    .put("maxMutes", maxMutes ?: JSONObject.NULL)
+    .put("muteGapSeconds", muteGapSeconds)
+    .put("unlockMissions", jsonArray(unlockMissions, AlarmMission::toJson))
 
 internal fun JSONObject.toWakeOptions() = WakeOptions(
     relativeTriggerMillis = longOrNull("relativeTriggerMillis"),
@@ -81,6 +84,13 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     stillAwakeDelayMin = optInt("stillAwakeDelayMin", 5),
     muteDurationSec = optInt("muteDurationSec", 30).takeIf { it in MUTE_DURATIONS_SECONDS } ?: 30,
     emergencyStopEnabled = optBoolean("emergencyStopEnabled", false),
+    maxMutes = when {
+        !has("maxMutes") -> 1
+        isNull("maxMutes") -> null
+        else -> optInt("maxMutes", 1).coerceIn(0, 5)
+    },
+    muteGapSeconds = optInt("muteGapSeconds", 30).takeIf { it == 30 || it == 45 || it >= 60 && it % 60 == 0 } ?: 30,
+    unlockMissions = optJSONArray("unlockMissions")?.records(JSONObject::toMission).orEmpty(),
 )
 
 internal fun ScanTarget.toJson() = JSONObject()

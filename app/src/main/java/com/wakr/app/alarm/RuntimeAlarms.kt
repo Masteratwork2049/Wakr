@@ -24,6 +24,7 @@ internal object RuntimeAlarms {
     fun mirror(context: Context, alarm: Alarm) {
         val w = alarm.wake
         val minimal = alarm.copy(label = "", soundUri = alarm.soundUri?.takeIf { it == SILENT },
+            hasPrivateUnlockMissions = w.unlockMissions.isNotEmpty() || alarm.hasPrivateUnlockMissions,
             missions = emptyList(), privateMissionCount = maxOf(alarm.ringMissions.size, alarm.privateMissionCount), createdAt = null, wake = WakeOptions(
                 relativeTriggerMillis = w.relativeTriggerMillis, scheduledDateEpochDay = w.scheduledDateEpochDay, pausedUntilEpochDay = w.pausedUntilEpochDay,
                 timeZoneId = w.timeZoneId, deleteAfterDismiss = w.deleteAfterDismiss,
@@ -34,6 +35,7 @@ internal object RuntimeAlarms {
                 rebootSurvivalMax = w.rebootSurvivalMax,
                 lockBeforeRingMin = w.lockBeforeRingMin,
                 muteDurationSec = w.muteDurationSec, emergencyStopEnabled = w.emergencyStopEnabled,
+                maxMutes = w.maxMutes, muteGapSeconds = w.muteGapSeconds,
                 volumePercent = w.volumePercent, fadeInSeconds = w.fadeInSeconds, vibrationPattern = w.vibrationPattern))
         prefs(context).edit().putString(alarm.id.toString(), encodeAlarms(listOf(minimal))).apply()
     }

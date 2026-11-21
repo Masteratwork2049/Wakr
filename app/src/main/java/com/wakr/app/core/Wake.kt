@@ -46,6 +46,10 @@ data class WakeOptions(
     val stillAwakeDelayMin: Int = 5,
     val muteDurationSec: Int = 30,
     val emergencyStopEnabled: Boolean = false,
+    val maxMutes: Int? = 1,
+    val muteGapSeconds: Int = 30,
+    val unlockMissions: List<AlarmMission> = emptyList(),
+
 )
 
 internal val MUTE_DURATIONS_SECONDS = listOf(0, 10, 20, 30, 45, 60)

@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,9 @@ internal val MissionType.title: String
 
 internal val AlarmMission.puzzleMode: String
     get() = runCatching { JSONObject(configJson).optString("puzzle", "Numbers in order") }.getOrDefault("Numbers in order")
+
+internal val AlarmMission.memoryBoardSize: Int
+    get() = runCatching { JSONObject(configJson).optInt("boardSize", 3) }.getOrDefault(3).coerceIn(3, 5)
 
 @Composable
 internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFallback: Boolean = false, onPass: () -> Unit) {
@@ -137,15 +141,17 @@ private fun MathChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
 
 @Composable
 private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
+    val board = mission.memoryBoardSize
+    val cellNames = remember(board) { List(board * board) { "Row ${it / board + 1}, column ${it % board + 1}" } }
     val rounds = mission.roundsOrCount.coerceIn(1, 10)
     var round by rememberSaveable { mutableIntStateOf(0) }
     var entry by rememberSaveable { mutableIntStateOf(0) }
     var retry by rememberSaveable { mutableIntStateOf(0) }
     var lit by remember { mutableIntStateOf(-1) }
     var showing by rememberSaveable { mutableStateOf(true) }
-    val sequence = remember(round) {
+    val sequence = remember(round, board) {
         val random = Random(seed + round)
-        List(2 + mission.difficulty.ordinal + round) { random.nextInt(9) }
+        List(2 + mission.difficulty.ordinal + round) { random.nextInt(board * board) }
     }
     LaunchedEffect(round, retry) {
         if (!showing || round >= rounds) return@LaunchedEffect
@@ -175,7 +181,7 @@ private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit)
             Text(
                 when {
                     round >= rounds -> "All rounds complete"
-                    showing && lit >= 0 -> "Tile ${lit + 1}"
+                    showing && lit >= 0 -> cellNames[lit]
                     showing && retry > 0 -> "Try again. Watch the replay."
                     showing -> "Watch the tiles light up in order."
                     else -> "$entry of ${sequence.size} tiles entered"
@@ -186,7 +192,7 @@ private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit)
             )
         }
     }
-    TileGrid(List(9) { (it + 1).toString() }, highlight = lit, enabled = !showing && round < rounds) { index ->
+    TileGrid(cellNames, highlight = lit, enabled = !showing && round < rounds, columns = board, showLabels = false) { index ->
         if (index != sequence[entry]) {
             entry = 0
             showing = true
@@ -314,18 +320,24 @@ private fun TypingChallenge(seed: Long, pass: () -> Unit) {
 }
 
 @Composable
-private fun TileGrid(labels: List<String>, highlight: Int = -1, enabled: Boolean = true, onTap: (Int) -> Unit) {
+private fun TileGrid(
+    labels: List<String>, highlight: Int = -1, enabled: Boolean = true, columns: Int = 3,
+    showLabels: Boolean = true, onTap: (Int) -> Unit,
+) {
+    val height = ((LocalMissionChallengeHeight.current - 145.dp) / columns).coerceIn(48.dp, 84.dp)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        repeat(3) { row ->
+        repeat(columns) { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                repeat(3) { col ->
-                    val index = row * 3 + col
+                repeat(columns) { col ->
+                    val index = row * columns + col
                     FilledTonalButton(onClick = { onTap(index) }, enabled = enabled,
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.weight(1f).height(height).then(
+                            if (showLabels) Modifier else Modifier.semantics { contentDescription = labels[index] },
+                        ),
                         colors = if (index == highlight) ButtonDefaults.filledTonalButtonColors(
                             disabledContainerColor = MaterialTheme.colorScheme.primary,
                             disabledContentColor = MaterialTheme.colorScheme.onPrimary,
-                        ) else ButtonDefaults.filledTonalButtonColors()) { Text(labels[index]) }
+                        ) else ButtonDefaults.filledTonalButtonColors()) { if (showLabels) Text(labels[index]) }
                 }
             }
         }

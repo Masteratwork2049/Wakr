@@ -99,6 +99,18 @@ class WakeStoreTest {
         }
     }
 
+    @Test fun muteGapAndSeparateUnlockMissionsRoundTrip() {
+        val legacy = org.json.JSONObject().toWakeOptions()
+        assertEquals(1, legacy.maxMutes)
+        assertEquals(30, legacy.muteGapSeconds)
+        assertTrue(legacy.unlockMissions.isEmpty())
+        for (limit in listOf(0, 1, 5, null)) {
+            val unlock = AlarmMission(5, MissionType.MEMORY, configJson = """{"boardSize":5}""")
+            val options = WakeOptions(maxMutes = limit, muteGapSeconds = 180, unlockMissions = listOf(unlock))
+            assertEquals(options, options.toJson().toWakeOptions())
+        }
+    }
+
     @Test fun wakeMetricsSurviveHistoryAndAlarmRoundTrips() {
         val alarm = original.copy(missionMuteCount = 2, snoozeCount = 1, firstRingAt = 2_000)
         assertEquals(alarm, parseAlarms(encodeAlarms(listOf(alarm))).single())

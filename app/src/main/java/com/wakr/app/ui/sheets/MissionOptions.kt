@@ -44,6 +44,19 @@ internal fun MissionOptions(
     soundRows: (@Composable () -> Unit)? = null,
     scheduleRows: (@Composable () -> Unit)? = null,
 ) {
+    DifficultyOptions(wake, onWake)
+    Spacer(Modifier.height(12.dp))
+    MissionListSection("Wake-up missions", missions, onMissions)
+    Spacer(Modifier.height(12.dp))
+    WakeBehaviorOptions(wake, onWake, soundRows, scheduleRows)
+}
+
+@Composable
+private fun MissionListSection(
+    title: String,
+    missions: List<AlarmMission>,
+    onMissions: (List<AlarmMission>) -> Unit,
+) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var edit by remember { mutableStateOf<AlarmMission?>(null) }
     var preview by remember { mutableStateOf<AlarmMission?>(null) }
@@ -54,14 +67,12 @@ internal fun MissionOptions(
             removed = null
         }
     }
-    DifficultyOptions(wake, onWake)
-    Spacer(Modifier.height(12.dp))
     val summary = when (missions.size) {
         0 -> "No missions"
         1 -> missions.single().type.title
         else -> "${missions.size} missions"
     }
-    AlarmEditorSection("Wake-up missions", summary, Icons.Outlined.Psychology) {
+    AlarmEditorSection(title, summary, Icons.Outlined.Psychology) {
         missions.forEachIndexed { index, mission ->
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -118,8 +129,6 @@ internal fun MissionOptions(
         }
         FilledTonalButton(onClick = { adding = true }, modifier = Modifier.padding(12.dp)) { Text("Add mission") }
     }
-    Spacer(Modifier.height(12.dp))
-    WakeBehaviorOptions(wake, onWake, soundRows, scheduleRows)
     if (adding) AlertDialog(onDismissRequest = { adding = false }, title = { Text("Add mission") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -168,6 +177,10 @@ private fun MissionEditor(initial: AlarmMission, onClose: () -> Unit, save: (Ala
                     mission = mission.copy(roundsOrCount = it)
                 }
                 if (math) Text("Example · " + mathProblem(mission.difficulty, kotlin.random.Random(12)).expression)
+                else NumberChoice("Board size", mission.memoryBoardSize, listOf(3, 4, 5), { "${it}×$it" }) { size ->
+                    val config = runCatching { JSONObject(mission.configJson) }.getOrElse { JSONObject() }
+                    mission = mission.copy(configJson = config.put("boardSize", size).toString())
+                }
             }
             if (initial.type == MissionType.PUZZLE) {
                 ChoiceRow("Puzzle type", mission.puzzleMode, listOf("Sliding tiles", "Numbers in order", "Trace pattern"), { it }) {
@@ -226,8 +239,26 @@ private fun WakeBehaviorOptions(
     }
     AlarmEditorSection("Sound and vibration", "$soundSummary · ${wake.volumePercent}%", Icons.Outlined.VolumeUp) {
         soundRows?.invoke()
-        NumberChoice("Mute duration", wake.muteDurationSec, MUTE_DURATIONS_SECONDS,
-            { if (it == 0) "Off" else "$it seconds" }) { save(wake.copy(muteDurationSec = it)) }
+        NumberChoice("Number of mutes", if (wake.muteDurationSec == 0) 0 else wake.maxMutes ?: -1,
+            (0..5).toList() + -1, { when (it) { 0 -> "Off"; -1 -> "Unlimited"; else -> it.toString() } }) {
+            save(wake.copy(maxMutes = it.takeUnless { count -> count == -1 },
+                muteDurationSec = if (it != 0 && wake.muteDurationSec == 0) 30 else wake.muteDurationSec))
+        }
+        if (wake.maxMutes != 0) {
+            NumberChoice("Mute duration", wake.muteDurationSec, MUTE_DURATIONS_SECONDS,
+                { if (it == 0) "Off" else "$it seconds" }) { save(wake.copy(muteDurationSec = it)) }
+        }
+        if (wake.muteDurationSec != 0 && wake.maxMutes != 0 && wake.maxMutes != 1) {
+            NumberChoice("Mute gap", wake.muteGapSeconds, listOf(30, 45, 60), { seconds ->
+                when {
+                    seconds < 60 -> "$seconds seconds"
+                    seconds == 60 -> "1 minute"
+                    else -> "${seconds / 60} minutes"
+                }
+            }, custom = CustomNumber("Minutes", 1..Int.MAX_VALUE / 60, unitsPerEntry = 60)) {
+                save(wake.copy(muteGapSeconds = it))
+            }
+        }
         ChoiceRow("Sound mode", wake.soundMode, AlarmSoundMode.entries, {
             when (it) {
                 AlarmSoundMode.ONE -> "One sound"
@@ -293,7 +324,7 @@ private fun preRingLockLabel(minutes: Int): String = when {
 private fun DifficultyOptions(wake: WakeOptions, save: (WakeOptions) -> Unit) {
     val checks = wake.stillAwakeChecksCount
     val protection = listOfNotNull(
-        preRingLockLabel(wake.lockBeforeRingMin).takeIf { wake.lockBeforeRingMin > 0 }?.let { "$it pre-ring lock" },
+        preRingLockLabel(wake.lockBeforeRingMin.takeIf { it > 0 } ?: DEFAULT_PRE_RING_LOCK_MINUTES).takeIf { wake.unlockMissions.isNotEmpty() }?.let { "$it pre-ring lock" },
         when (checks) {
             0 -> null
             1 -> "1 awake check"
@@ -305,9 +336,18 @@ private fun DifficultyOptions(wake: WakeOptions, save: (WakeOptions) -> Unit) {
             { if (it < 0) "App default" else if (it == 0) "Never" else "$it min" }) {
             save(wake.copy(silenceAfterMin = it.takeIf { minutes -> minutes >= 0 }))
         }
-        NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), ::preRingLockLabel,
-            custom = CustomNumber("Hours", 1..Int.MAX_VALUE / 60, unitsPerEntry = 60)) {
-            save(wake.copy(lockBeforeRingMin = it))
+        val lockMinutes = wake.lockBeforeRingMin.takeIf { it > 0 } ?: DEFAULT_PRE_RING_LOCK_MINUTES
+        AlarmEditorSection("Pre-ring lock", if (wake.unlockMissions.isEmpty()) "Off · Add unlock missions"
+            else preRingLockLabel(lockMinutes), Icons.Outlined.LockClock) {
+            if (wake.unlockMissions.isNotEmpty()) {
+                NumberChoice("Protection window", lockMinutes, listOf(15, 30, 60), ::preRingLockLabel,
+                    custom = CustomNumber("Hours", 1..Int.MAX_VALUE / 60, unitsPerEntry = 60)) {
+                    save(wake.copy(lockBeforeRingMin = it))
+                }
+            }
+            MissionListSection("Unlock missions", wake.unlockMissions) { missions ->
+                save(wake.copy(unlockMissions = missions, lockBeforeRingMin = lockMinutes))
+            }
         }
         NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) {
             save(wake.copy(rebootSurvivalMax = it))

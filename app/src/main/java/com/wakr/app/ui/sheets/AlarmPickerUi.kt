@@ -56,6 +56,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.MusicNote
@@ -164,6 +165,7 @@ fun AlarmPickerSheetContent(
     setWake: (com.wakr.app.core.WakeOptions) -> Unit,
     setDays: (Set<DayOfWeek>) -> Unit,
     onDelete: () -> Unit,
+    onPreview: (() -> Unit)? = null,
     modal: Boolean = false,
     initialRelative: Boolean = false,
     fullscreen: Boolean = false,
@@ -197,6 +199,9 @@ fun AlarmPickerSheetContent(
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
                 Text(title, Modifier.weight(1f).padding(end = 6.dp), style = MaterialTheme.typography.titleLargeEmphasized)
+                if (onPreview != null) IconButton(onClick = onPreview) {
+                    Icon(Icons.Outlined.PlayCircleOutline, "Preview alarm")
+                }
                 if (showDelete) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete alarm") }
                 SheetHeaderButton("Save", primary = true, onClick = { onSave(false) }, icon = Icons.Rounded.Check)
             }

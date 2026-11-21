@@ -1,15 +1,13 @@
 package com.wakr.app.ui
 
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 
 import com.wakr.app.core.asDuplicate
 import com.wakr.app.core.missionsRemaining
-import com.wakr.app.core.AlarmMission
-import com.wakr.app.core.MissionDifficulty
-import com.wakr.app.core.MissionType
 import com.wakr.app.ui.missions.MissionChallenge
+import com.wakr.app.ui.missions.MissionScreen
+import com.wakr.app.ui.missions.title
+import com.wakr.app.ui.sheets.AlarmFullscreenDialog
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
@@ -204,27 +202,32 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
             editing = alarm
         }
         protectedAction?.let { (alarms, action) ->
+            val challenges = remember(alarms) {
+                alarms.flatMap { alarm -> alarm.wake.unlockMissions.map { alarm to it } }
+            }
             val seed = remember(alarms) { System.nanoTime() }
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { protectedAction = null },
-                title = { Text("Alarm protection") },
-                text = {
-                    androidx.compose.foundation.layout.Column(
-                        Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(if (alarms.size == 1) "Solve this problem to change the upcoming alarm."
-                            else "Solve this problem to change ${alarms.size} protected alarms.")
-                        val difficulty = if (alarms.any { it.wake.lockBeforeRingMin >= 60 }) MissionDifficulty.MEDIUM else MissionDifficulty.EASY
-                        MissionChallenge(AlarmMission(-1, MissionType.MATH, difficulty), seed) {
-                            protectedAction = null
-                            vm.authorizePreRingChanges(alarms)
-                            action()
+            var step by remember(alarms) { mutableIntStateOf(0) }
+            val (alarm, mission) = challenges[step]
+            val close = { protectedAction = null }
+            AlarmFullscreenDialog(onClose = close) {
+                MissionScreen(
+                    "Alarm protection",
+                    "${alarm.label.ifBlank { "Alarm" }} · ${mission.type.title} · ${step + 1} of ${challenges.size}",
+                    progress = step.toFloat() / challenges.size,
+                    onBack = close,
+                    actions = { androidx.compose.material3.TextButton(onClick = close) { Text("Cancel") } },
+                ) {
+                    androidx.compose.runtime.key(step) {
+                        MissionChallenge(mission, seed + step) {
+                            if (step + 1 == challenges.size) {
+                                protectedAction = null
+                                vm.authorizePreRingChanges(alarms)
+                                action()
+                            } else step++
                         }
                     }
-                },
-                confirmButton = { androidx.compose.material3.TextButton(onClick = { protectedAction = null }) { Text("Cancel") } },
-            )
+                }
+            }
         }
         var relativePicker by remember { mutableStateOf(false) }
         var showNewAlarmPicker by remember { mutableStateOf(false) }

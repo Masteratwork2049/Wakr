@@ -77,7 +77,7 @@ class AlarmService : Service() {
     private var silenceJob: Job? = null
     private var effectsJob: Job? = null
     private var muteExpiryJob: Job? = null
-    private var muteDurationSeconds = 0
+    private var muteOptions = com.wakr.app.core.WakeOptions()
     private var tts: TextToSpeech? = null
     private var shakeListener: SensorEventListener? = null
 
@@ -106,24 +106,13 @@ class AlarmService : Service() {
                 }
                 if (occurrence == (id to at) && active) return@launch
                 val settings = RuntimeAlarms.settings(this@AlarmService)
+                stopPreview?.invoke()
                 resetMute()
-                muteDurationSeconds = alarm.wake.muteDurationSec
+                muteOptions = alarm.wake
                 occurrence = id to at
                 current = this@AlarmService
-                val resource = listOf(R.raw.alarm_fallback, R.raw.alarm_sunrise, R.raw.alarm_daybreak)
-                val day = java.time.Instant.ofEpochMilli(alarm.firstRingAt ?: at)
-                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate().toEpochDay()
-                val uri = when (alarm.wake.soundMode) {
-                    AlarmSoundMode.ONE -> alarm.soundUri
-                    AlarmSoundMode.SURPRISE -> "android.resource://$packageName/${resource[Math.floorMod(day, resource.size.toLong()).toInt()]}"
-                    AlarmSoundMode.LOCAL_MUSIC -> alarm.wake.musicUris.randomOrNull() ?: alarm.soundUri
-                }
-                val pattern = when (alarm.wake.vibrationPattern) {
-                    VibrationPattern.DEFAULT -> ALARM_PATTERN
-                    VibrationPattern.SOS -> longArrayOf(0, 180, 130, 180, 130, 180, 280, 550, 130, 550, 130, 550, 500)
-                    VibrationPattern.PULSE -> longArrayOf(0, 220, 220, 550, 330)
-                    VibrationPattern.HEARTBEAT -> longArrayOf(0, 120, 130, 180, 500)
-                }
+                val uri = alarmRingtone(this@AlarmService, alarm, at)
+                val pattern = alarmVibrationPattern(alarm.wake.vibrationPattern)
                 ring(ringingNotification(this@AlarmService, alarm, at), uri, alarm.vibrate, pattern,
                     alarm.wake.silenceAfterMin ?: settings.alarms.silenceAfterMinutes,
                     alarm.wake.volumePercent, alarm.wake.fadeInSeconds)
@@ -141,6 +130,7 @@ class AlarmService : Service() {
                     return@launch
                 }
                 val settings = store.settingsNow()
+                stopPreview?.invoke()
                 resetMute()
                 occurrence = null
                 stopEffects()
@@ -193,18 +183,7 @@ class AlarmService : Service() {
     }
 
     private fun vibrate(pattern: LongArray) {
-        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            getSystemService<VibratorManager>()?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService<Vibrator>()
-        }
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        // Index 0 restarts the pattern from its first element, i.e. repeat forever.
-        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0), attrs)
+        vibrator = alarmVibrator(this)?.also { it.playAlarmPattern(pattern) }
     }
 
     private fun startEffects(alarm: Alarm, at: Long) {
@@ -307,13 +286,14 @@ class AlarmService : Service() {
         muteExpiryJob?.cancel()
         muteExpiryJob = null
         muteState.value = null
-        muteDurationSeconds = 0
+        muteOptions = com.wakr.app.core.WakeOptions()
     }
 
     private fun endMute(token: Pair<Long, Long>) {
         muteExpiryJob?.cancel()
         muteExpiryJob = null
-        muteState.value = AlarmMute(token, null)
+        muteState.value = muteState.value?.takeIf { it.occurrence == token }
+            ?.ended(muteOptions, android.os.SystemClock.elapsedRealtime())
         sound.resume()
     }
 
@@ -340,14 +320,15 @@ class AlarmService : Service() {
         suspend fun toggleMute(id: Long, at: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
             val token = id to at
             val service = current?.takeIf { it.occurrence == token && it.active } ?: return@withContext
-            if (service.muteDurationSeconds == 0) return@withContext
             val existing = muteState.value?.takeIf { it.occurrence == token }
-            if (existing != null) {
-                if (existing.untilElapsedMs != null) service.endMute(token)
+            if (existing?.untilElapsedMs != null) {
+                service.endMute(token)
                 return@withContext
             }
-            val duration = service.muteDurationSeconds * 1_000L
-            muteState.value = AlarmMute(token, android.os.SystemClock.elapsedRealtime() + duration)
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!service.muteOptions.canBeginMute(existing, now)) return@withContext
+            val duration = service.muteOptions.muteDurationSec * 1_000L
+            muteState.value = AlarmMute(token, now + duration, (existing?.used ?: 0) + 1)
             service.sound.pause()
             service.tts?.stop()
             service.muteExpiryJob = service.scope.launch {
@@ -377,8 +358,11 @@ class AlarmService : Service() {
         const val ACTION_START_TIMER = "com.wakr.app.RING_TIMER"
 
         /** Half a second on, half off: insistent without being a klaxon. */
-        private val ALARM_PATTERN = longArrayOf(0, 500, 500)
         private val TIMER_PATTERN = longArrayOf(0, 300, 200, 300, 900)
+
+        internal var stopPreview: (() -> Unit)? = null
+
+        fun hasActiveAlarm(): Boolean = current?.let { it.active && it.occurrence != null } == true
 
         fun stop(context: Context) {
             context.stopService(Intent(context, AlarmService::class.java))
@@ -434,4 +418,34 @@ class AlarmService : Service() {
     }
 }
 
-internal data class AlarmMute(val occurrence: Pair<Long, Long>, val untilElapsedMs: Long?)
+internal fun alarmRingtone(context: Context, alarm: Alarm, at: Long): String? = when (alarm.wake.soundMode) {
+    AlarmSoundMode.ONE -> alarm.soundUri
+    AlarmSoundMode.SURPRISE -> {
+        val sounds = listOf(R.raw.alarm_fallback, R.raw.alarm_sunrise, R.raw.alarm_daybreak)
+        val day = java.time.Instant.ofEpochMilli(alarm.firstRingAt ?: at)
+            .atZone(java.time.ZoneId.systemDefault()).toLocalDate().toEpochDay()
+        "android.resource://${context.packageName}/${sounds[Math.floorMod(day, sounds.size.toLong()).toInt()]}"
+    }
+    AlarmSoundMode.LOCAL_MUSIC -> alarm.wake.musicUris.randomOrNull() ?: alarm.soundUri
+}
+
+internal fun alarmVibrationPattern(pattern: VibrationPattern): LongArray = when (pattern) {
+    VibrationPattern.DEFAULT -> longArrayOf(0, 500, 500)
+    VibrationPattern.SOS -> longArrayOf(0, 180, 130, 180, 130, 180, 280, 550, 130, 550, 130, 550, 500)
+    VibrationPattern.PULSE -> longArrayOf(0, 220, 220, 550, 330)
+    VibrationPattern.HEARTBEAT -> longArrayOf(0, 120, 130, 180, 500)
+}
+
+
+internal fun alarmVibrator(context: Context): Vibrator? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) context.getSystemService<VibratorManager>()?.defaultVibrator
+    else {
+        @Suppress("DEPRECATION")
+        context.getSystemService<Vibrator>()
+    }
+
+internal fun Vibrator.playAlarmPattern(pattern: LongArray) {
+    val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+    vibrate(VibrationEffect.createWaveform(pattern, 0), attributes)
+}

@@ -70,15 +70,23 @@ class PhaseThreeAlarmTest {
         assertSame(noSnooze, noSnooze.finishUserOccurrence(7, at, at + 60_000))
     }
 
+    @Test fun emptyUnlockListLeavesTheWindowUnprotectedAndAnAddedMissionUsesTheDefaultWindow() {
+        val now = ZonedDateTime.parse("2026-11-21T06:51:00Z")
+        val alarm = Alarm(28, LocalTime.of(7, 0), wake = WakeOptions(lockBeforeRingMin = 60))
+        assertFalse(alarm.isPreRingProtected(now))
+        assertTrue(alarm.copy(wake = WakeOptions(unlockMissions = ring.missions)).isPreRingProtected(now))
+        assertTrue(alarm.copy(hasPrivateUnlockMissions = true).isPreRingProtected(now))
+    }
+
     @Test fun preRingWindowStartsAtBoundary() {
-        val alarm = Alarm(10L, LocalTime.of(7, 0), wake = WakeOptions(lockBeforeRingMin = 30))
+        val alarm = Alarm(10L, LocalTime.of(7, 0), wake = WakeOptions(lockBeforeRingMin = 30, unlockMissions = ring.missions))
         assertFalse(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T06:29:59Z")))
         assertTrue(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T06:30:00Z")))
         assertFalse(alarm.copy(enabled = false).isPreRingProtected(ZonedDateTime.parse("2026-11-21T06:30:00Z")))
     }
 
     @Test fun preRingProtectionSupportsWholeHours() {
-        val alarm = Alarm(12, LocalTime.of(7, 0), wake = WakeOptions(lockBeforeRingMin = 3 * 60))
+        val alarm = Alarm(12, LocalTime.of(7, 0), wake = WakeOptions(lockBeforeRingMin = 3 * 60, unlockMissions = ring.missions))
         assertFalse(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T03:59:59Z")))
         assertTrue(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T04:00:00Z")))
     }

@@ -7,10 +7,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+
+internal val LocalMissionChallengeHeight = staticCompositionLocalOf { 0.dp }
 
 /** The ringing and practice flows use the same hierarchy and challenge surface. */
 @Composable
@@ -38,16 +42,34 @@ internal fun MissionScreen(
             }
             if (progress != null) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
         }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
-                color = colors.surfaceContainerHigh, contentColor = colors.onSurface) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = challenge)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) {
+            val compact = maxHeight < 430.dp
+            Column(
+                if (compact) Modifier.fillMaxSize().verticalScroll(rememberScrollState()) else Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    Modifier.fillMaxWidth().then(if (compact) Modifier else Modifier.weight(1f)),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = colors.surfaceContainerHigh,
+                    contentColor = colors.onSurface,
+                ) {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val available = if (constraints.hasBoundedHeight) maxHeight else 0.dp
+                        CompositionLocalProvider(LocalMissionChallengeHeight provides available) {
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .then(if (compact) Modifier else Modifier.verticalScroll(rememberScrollState()))
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                content = challenge,
+                            )
+                        }
+                    }
+                }
+                actions()
+                Spacer(Modifier.height(4.dp))
             }
-            actions()
         }
     }
 }
