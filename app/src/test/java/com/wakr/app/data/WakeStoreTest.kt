@@ -89,6 +89,16 @@ class WakeStoreTest {
         }
     }
 
+    @Test fun muteAndEmergencySettingsPreserveDefaultsAndAllDurationChoices() {
+        val legacy = org.json.JSONObject().toWakeOptions()
+        assertEquals(30, legacy.muteDurationSec)
+        assertFalse(legacy.emergencyStopEnabled)
+        for (duration in MUTE_DURATIONS_SECONDS) {
+            val options = WakeOptions(muteDurationSec = duration, emergencyStopEnabled = true)
+            assertEquals(options, options.toJson().toWakeOptions())
+        }
+    }
+
     @Test fun wakeMetricsSurviveHistoryAndAlarmRoundTrips() {
         val alarm = original.copy(missionMuteCount = 2, snoozeCount = 1, firstRingAt = 2_000)
         assertEquals(alarm, parseAlarms(encodeAlarms(listOf(alarm))).single())

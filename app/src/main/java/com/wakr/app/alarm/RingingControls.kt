@@ -65,13 +65,15 @@ internal fun RingPillLabel(icon: ImageVector, title: String, color: Color, subti
 }
 
 @Composable
-internal fun EmergencyStopButton(onStop: () -> Unit) {
+internal fun EmergencyStopButton(onStop: (Offset) -> Unit) {
     val finish by rememberUpdatedState(onStop)
     var hold by remember { mutableFloatStateOf(0f) }
+    var center by remember { mutableStateOf(Offset.Zero) }
     var showAccessibleConfirmation by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     Box(
         Modifier.fillMaxWidth()
+            .onGloballyPositioned { center = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f)) }
             .clip(CircleShape)
             .drawBehind {
                 drawRect(colors.errorContainer)
@@ -94,7 +96,7 @@ internal fun EmergencyStopButton(onStop: () -> Unit) {
                     coroutineScope {
                         val countdown = launch {
                             waitForEmergencyHold { hold = it }
-                            finish()
+                            finish(center)
                         }
                         try {
                             tryAwaitRelease()
@@ -122,7 +124,7 @@ internal fun EmergencyStopButton(onStop: () -> Unit) {
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
             } },
             confirmButton = {
-                TextButton(enabled = progress >= 1f, onClick = { showAccessibleConfirmation = false; finish() }) {
+                TextButton(enabled = progress >= 1f, onClick = { showAccessibleConfirmation = false; finish(center) }) {
                     Text("Stop alarm")
                 }
             },

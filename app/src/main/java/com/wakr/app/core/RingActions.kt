@@ -23,9 +23,9 @@ internal fun Alarm.finishUserOccurrence(id: Long, at: Long, snoozeUntil: Long?):
     return finishOccurrence(id, at, snoozeUntil)
 }
 
-/** Only an active, unfinished mission offers an emergency stop. */
+/** Emergency stop is available only when the current alarm enables it. */
 internal fun Alarm.finishEmergencyOccurrence(id: Long, at: Long): Alarm? =
-    if (missionsRemaining) finishOccurrence(id, at, null) else this
+    if (wake.emergencyStopEnabled) finishOccurrence(id, at, null) else this
 
 /** Apply the final solved mission and dismissal in the same occurrence update. */
 internal fun Alarm.finishAfterMission(id: Long, at: Long, solvedIndex: Int): Alarm? {

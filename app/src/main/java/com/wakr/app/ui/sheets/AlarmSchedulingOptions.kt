@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.material.icons.outlined.FlashlightOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.foundation.layout.*
@@ -65,6 +66,10 @@ internal fun AlarmSchedulingOptions(
             AlarmOptionSwitchRow("Auto-delete after dismissal", Icons.Outlined.DeleteOutline, wake.deleteAfterDismiss) {
                 setWake(wake.copy(deleteAfterDismiss = it))
             }
+        }
+        AlarmOptionDivider()
+        AlarmOptionSwitchRow("Emergency stop", Icons.Outlined.MedicalServices, wake.emergencyStopEnabled) {
+            setWake(wake.copy(emergencyStopEnabled = it))
         }
     }
     if (part != AlarmSchedulePart.BASICS) {

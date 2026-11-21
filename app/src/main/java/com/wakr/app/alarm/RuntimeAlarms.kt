@@ -33,6 +33,7 @@ internal object RuntimeAlarms {
                 snoozeDurationMin = w.snoozeDurationMin, maxSnoozes = w.maxSnoozes,
                 rebootSurvivalMax = w.rebootSurvivalMax,
                 lockBeforeRingMin = w.lockBeforeRingMin,
+                muteDurationSec = w.muteDurationSec, emergencyStopEnabled = w.emergencyStopEnabled,
                 volumePercent = w.volumePercent, fadeInSeconds = w.fadeInSeconds, vibrationPattern = w.vibrationPattern))
         prefs(context).edit().putString(alarm.id.toString(), encodeAlarms(listOf(minimal))).apply()
     }

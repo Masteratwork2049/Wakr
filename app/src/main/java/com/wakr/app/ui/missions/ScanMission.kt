@@ -81,6 +81,7 @@ private fun ScanNfc(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) {
         }
     }
     Text(if (enabled) "Hold the phone near the NFC tag." else "Turn on NFC in Android Settings.")
+    if (!enabled) ScannerFallback(onUnavailable)
 }
 
 @Composable

@@ -7,6 +7,13 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.key
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -152,8 +159,8 @@ class AlarmRingActivity : ComponentActivity() {
                 val awaitingUnlock = mission == null && current.missionIndex < current.privateMissionCount
                 var showMission by rememberSaveable(id, at) { mutableStateOf(false) }
                 val missionStates = rememberSaveableStateHolder()
-                val mutedToken by AlarmService.muted.collectAsStateWithLifecycle()
-                val muted = mutedToken == (id to at)
+                val muteState by AlarmService.mute.collectAsStateWithLifecycle()
+                val muteLabel = timedMuteLabel(current.wake.muteDurationSec, muteState?.takeIf { it.occurrence == (id to at) })
                 val canOpenMission = mission != null || awaitingUnlock
                 BackHandler(enabled = showMission && canOpenMission && !completing && confirmation == null) {
                     showMission = false
@@ -172,8 +179,8 @@ class AlarmRingActivity : ComponentActivity() {
                         val receipt = withContext(NonCancellable + Dispatchers.IO) {
                             finishRing(applicationContext, id, at, actionName, solvedMissionIndex)
                         } ?: return
-                        if (actionName == ClockActionReceiver.ACTION_EMERGENCY) finish()
-                        else confirmation = RingConfirmation(receipt.snoozeMinutes, origin)
+                        confirmation = RingConfirmation(receipt.snoozeMinutes, origin,
+                            emergency = actionName == ClockActionReceiver.ACTION_EMERGENCY)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Exception) {
@@ -205,8 +212,8 @@ class AlarmRingActivity : ComponentActivity() {
                                     scope.launch { closeRing(ClockActionReceiver.ACTION_SNOOZE, origin) }
                                 }) else null
                                 val snoozeMinutes = current.snoozeMinutes(settings.alarms.snoozeMinutes)
-                                val emergency: (() -> Unit)? = if (canOpenMission) ({
-                                    scope.launch { closeRing(ClockActionReceiver.ACTION_EMERGENCY, Offset.Zero) }
+                                val emergency: ((Offset) -> Unit)? = if (current.wake.emergencyStopEnabled) ({ origin ->
+                                    scope.launch { closeRing(ClockActionReceiver.ACTION_EMERGENCY, origin) }
                                 }) else null
                                 val mute: () -> Unit = { scope.launch { AlarmService.toggleMute(id, at) } }
                                 val name = current.label.ifBlank { label.ifBlank { "Alarm" } }
@@ -222,7 +229,7 @@ class AlarmRingActivity : ComponentActivity() {
                                             if (snooze != null) RingActionPill(
                                                 "Snooze · $snoozeMinutes min", Icons.Outlined.Snooze, onAction = snooze,
                                             )
-                                            AlarmSoundActions(muted, mute, emergency)
+                                            AlarmSoundActions(muteLabel, mute, emergency)
                                         },
                                     ) {
                                         if (mission == null) {
@@ -251,7 +258,7 @@ class AlarmRingActivity : ComponentActivity() {
                                         }
                                     }
                                 } else {
-                                    AlarmRingingScreen(name, snoozeMinutes, snooze, canOpenMission, muted, mute, emergency) { origin ->
+                                    AlarmRingingScreen(name, snoozeMinutes, snooze, canOpenMission, muteLabel, mute, emergency) { origin ->
                                         if (canOpenMission) showMission = true
                                         else scope.launch { closeRing(ClockActionReceiver.ACTION_DISMISS, origin) }
                                     }
@@ -289,9 +296,9 @@ internal fun AlarmRingingScreen(
     snoozeMinutes: Int,
     onSnooze: ((Offset) -> Unit)?,
     hasMission: Boolean,
-    muted: Boolean,
+    muteLabel: String?,
     onMute: () -> Unit,
-    onEmergency: (() -> Unit)?,
+    onEmergency: ((Offset) -> Unit)?,
     onPrimary: (Offset) -> Unit,
 ) {
     val now by rememberWallTicker(60_000L)
@@ -316,7 +323,7 @@ internal fun AlarmRingingScreen(
                     if (onSnooze != null) RingActionPill(
                         "Snooze · $snoozeMinutes min", Icons.Outlined.Snooze, onAction = onSnooze,
                     )
-                    AlarmSoundActions(muted, onMute, onEmergency)
+                    AlarmSoundActions(muteLabel, onMute, onEmergency)
                 }
             }.single().measure(loose)
             val gap = 12.dp.roundToPx()
@@ -376,14 +383,37 @@ internal fun RingingClockReadout(
 }
 
 @Composable
-private fun AlarmSoundActions(muted: Boolean, onMute: () -> Unit, onEmergency: (() -> Unit)?) {
+private fun timedMuteLabel(duration: Int, mute: AlarmMute?): String? {
+    if (duration == 0) return null
+    if (mute == null) return "Mute · ${duration}s"
+    val until = mute.untilElapsedMs ?: return null
+    return key(until) {
+        val remaining by produceState((until - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L), until) {
+            while (true) {
+                value = (until - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+                if (value == 0L) break
+                delay((value - 1) % 1_000 + 1)
+            }
+        }
+        "Unmute · ${(remaining + 999) / 1_000}s"
+    }
+}
+
+@Composable
+private fun AlarmSoundActions(muteLabel: String?, onMute: () -> Unit, onEmergency: ((Offset) -> Unit)?) {
+    var lastLabel by remember { mutableStateOf("Mute") }
+    SideEffect { if (muteLabel != null) lastLabel = muteLabel }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        RingActionPill(
-            title = if (muted) "Unmute" else "Mute",
-            icon = if (muted) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
-            onAction = { onMute() },
-        )
+        AnimatedVisibility(visible = muteLabel != null, enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()) {
+            val title = muteLabel ?: lastLabel
+            RingActionPill(
+                title = title,
+                icon = if (title.startsWith("Unmute")) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                onAction = { onMute() },
+            )
+        }
         if (onEmergency != null) EmergencyStopButton(onEmergency)
     }
 }

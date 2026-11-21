@@ -6,6 +6,8 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,7 +44,7 @@ import kotlin.math.hypot
 internal const val RING_CONFIRMATION_HOLD_MS = 3_000L
 private val RevealEasing = CubicBezierEasing(.15f, .55f, .25f, 1f)
 
-internal data class RingConfirmation(val snoozeMinutes: Int?, val origin: Offset) {
+internal data class RingConfirmation(val snoozeMinutes: Int?, val origin: Offset, val emergency: Boolean = false) {
     val message: String
         get() = when (snoozeMinutes) {
             null -> "Alarm dismissed"
@@ -54,8 +56,16 @@ internal data class RingConfirmation(val snoozeMinutes: Int?, val origin: Offset
 @Composable
 internal fun RingConfirmationOverlay(result: RingConfirmation, onFinished: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val fill = if (result.snoozeMinutes != null) colors.secondaryContainer else colors.primaryContainer
-    val ink = if (result.snoozeMinutes != null) colors.onSecondaryContainer else colors.onPrimaryContainer
+    val fill = when {
+        result.emergency -> colors.errorContainer
+        result.snoozeMinutes != null -> colors.secondaryContainer
+        else -> colors.primaryContainer
+    }
+    val ink = when {
+        result.emergency -> colors.onErrorContainer
+        result.snoozeMinutes != null -> colors.onSecondaryContainer
+        else -> colors.onPrimaryContainer
+    }
     val motion = ValueAnimator.areAnimatorsEnabled()
     val spread = remember(result) { Animatable(0f) }
     val textAlpha = remember(result) { Animatable(0f) }
@@ -93,14 +103,14 @@ internal fun RingConfirmationOverlay(result: RingConfirmation, onFinished: () ->
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                result.message,
-                Modifier.graphicsLayer { alpha = textAlpha.value }
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-                color = ink,
-                style = MaterialTheme.typography.headlineMedium,
-                textAlign = TextAlign.Center,
-            )
+            Column(
+                Modifier.graphicsLayer { alpha = textAlpha.value }.semantics { liveRegion = LiveRegionMode.Polite },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(result.message, color = ink, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+                if (result.emergency) Text("Emergency", color = ink, style = MaterialTheme.typography.titleMedium)
+            }
         }
     }
 }

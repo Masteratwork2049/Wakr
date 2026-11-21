@@ -16,6 +16,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.wakr.app.core.*
@@ -39,24 +42,43 @@ internal val AlarmMission.puzzleMode: String
 
 @Composable
 internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFallback: Boolean = false, onPass: () -> Unit) {
-    val pass by rememberUpdatedState(onPass)
+    val onComplete by rememberUpdatedState(onPass)
     key(mission.id, seed) {
-        when (mission.type) {
-            MissionType.MATH -> MathChallenge(mission, seed) { pass() }
-            MissionType.MEMORY -> MemoryChallenge(mission, seed) { pass() }
-            MissionType.FOCUS_TAP -> FocusChallenge(seed) { pass() }
-            MissionType.PUZZLE -> PuzzleChallenge(mission, seed) { pass() }
-            MissionType.TYPING -> TypingChallenge(seed) { pass() }
-            MissionType.QR, MissionType.NFC -> {
-                val target = mission.target
-                var fallback by rememberSaveable { mutableStateOf(false) }
-                var mismatch by remember { mutableStateOf(false) }
-                if (fallback) MathChallenge(mission.copy(difficulty = MissionDifficulty.HARD, roundsOrCount = 3), seed) { pass() }
-                else if (target == null) Text("This mission needs a registered item.")
-                else {
-                    if (mismatch) Text("That item does not match. Scan ${target.label}.")
-                    ScanMission(mission.type, onUnavailable = if (allowScannerFallback) ({ fallback = true }) else null) {
-                        if (it == target.value) pass() else mismatch = true
+        var completed by remember { mutableStateOf(false) }
+        fun pass() {
+            if (completed) return
+            completed = true
+            onComplete()
+        }
+        // Each challenge may emit instructions, feedback, and controls separately.
+        // Keep them in a vertical layout even inside the ringing screen’s touch tracker.
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            when (mission.type) {
+                MissionType.MATH -> MathChallenge(mission, seed, ::pass)
+                MissionType.MEMORY -> MemoryChallenge(mission, seed, ::pass)
+                MissionType.FOCUS_TAP -> FocusChallenge(seed, ::pass)
+                MissionType.PUZZLE -> PuzzleChallenge(mission, seed, ::pass)
+                MissionType.TYPING -> TypingChallenge(seed, ::pass)
+                MissionType.QR, MissionType.NFC -> {
+                    val target = mission.target
+                    var fallback by rememberSaveable { mutableStateOf(false) }
+                    var mismatch by remember { mutableStateOf(false) }
+                    when {
+                        fallback -> MathChallenge(
+                            mission.copy(difficulty = MissionDifficulty.HARD, roundsOrCount = 3), seed, ::pass,
+                        )
+                        target == null -> {
+                            Text("This mission needs a registered item.")
+                            if (allowScannerFallback) TextButton(onClick = { fallback = true }) {
+                                Text("Solve a math challenge")
+                            }
+                        }
+                        else -> {
+                            if (mismatch) Text("That item does not match. Scan ${target.label}.")
+                            ScanMission(mission.type, onUnavailable = if (allowScannerFallback) ({ fallback = true }) else null) {
+                                if (it == target.value) pass() else mismatch = true
+                            }
+                        }
                     }
                 }
             }
@@ -92,7 +114,7 @@ private fun MathChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 keys.forEach { key ->
                     FilledTonalButton(modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                        enabled = key != "Check" || digits.isNotEmpty(),
+                        enabled = solved < count && (key != "Check" || digits.isNotEmpty()),
                         colors = if (key == "Check") ButtonDefaults.filledTonalButtonColors(
                             containerColor = colors.primary, contentColor = colors.onPrimary,
                         ) else ButtonDefaults.filledTonalButtonColors(),
@@ -120,13 +142,13 @@ private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit)
     var entry by rememberSaveable { mutableIntStateOf(0) }
     var retry by rememberSaveable { mutableIntStateOf(0) }
     var lit by remember { mutableIntStateOf(-1) }
-    var showing by remember { mutableStateOf(true) }
+    var showing by rememberSaveable { mutableStateOf(true) }
     val sequence = remember(round) {
         val random = Random(seed + round)
         List(2 + mission.difficulty.ordinal + round) { random.nextInt(9) }
     }
     LaunchedEffect(round, retry) {
-        showing = true
+        if (!showing || round >= rounds) return@LaunchedEffect
         delay(500)
         sequence.forEach { cell ->
             lit = cell
@@ -136,15 +158,42 @@ private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit)
         }
         showing = false
     }
-    Text(if (showing) "Watch the pattern" else "Repeat the pattern")
-    Text("Round ${(round + 1).coerceAtMost(rounds)} of $rounds")
-    TileGrid(List(9) { (it + 1).toString() }, highlight = lit, enabled = !showing) { index ->
+
+    val colors = MaterialTheme.colorScheme
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = colors.surfaceContainerHighest) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Round ${(round + 1).coerceAtMost(rounds)} of $rounds",
+                style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+            Text(
+                when {
+                    round >= rounds -> "Pattern complete"
+                    showing -> "Watch the pattern"
+                    else -> "Repeat the pattern"
+                },
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                when {
+                    round >= rounds -> "All rounds complete"
+                    showing && lit >= 0 -> "Tile ${lit + 1}"
+                    showing && retry > 0 -> "Try again. Watch the replay."
+                    showing -> "Watch the tiles light up in order."
+                    else -> "$entry of ${sequence.size} tiles entered"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+    TileGrid(List(9) { (it + 1).toString() }, highlight = lit, enabled = !showing && round < rounds) { index ->
         if (index != sequence[entry]) {
             entry = 0
             showing = true
             retry++
         } else if (++entry == sequence.size) {
             entry = 0
+            retry = 0
             if (++round == rounds) pass() else showing = true
         }
     }

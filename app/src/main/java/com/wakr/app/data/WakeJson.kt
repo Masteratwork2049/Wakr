@@ -1,5 +1,6 @@
 package com.wakr.app.data
 
+import com.wakr.app.core.MUTE_DURATIONS_SECONDS
 import com.wakr.app.core.AlarmMission
 import com.wakr.app.core.AlarmSoundMode
 import com.wakr.app.core.MissionDifficulty
@@ -51,6 +52,8 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("rebootSurvivalMax", rebootSurvivalMax)
     .put("stillAwakeChecksCount", stillAwakeChecksCount)
     .put("stillAwakeDelayMin", stillAwakeDelayMin)
+    .put("muteDurationSec", muteDurationSec)
+    .put("emergencyStopEnabled", emergencyStopEnabled)
 
 internal fun JSONObject.toWakeOptions() = WakeOptions(
     relativeTriggerMillis = longOrNull("relativeTriggerMillis"),
@@ -76,6 +79,8 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     rebootSurvivalMax = optInt("rebootSurvivalMax", 0),
     stillAwakeChecksCount = optInt("stillAwakeChecksCount", 0),
     stillAwakeDelayMin = optInt("stillAwakeDelayMin", 5),
+    muteDurationSec = optInt("muteDurationSec", 30).takeIf { it in MUTE_DURATIONS_SECONDS } ?: 30,
+    emergencyStopEnabled = optBoolean("emergencyStopEnabled", false),
 )
 
 internal fun ScanTarget.toJson() = JSONObject()

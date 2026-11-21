@@ -48,12 +48,14 @@ class PhaseThreeAlarmTest {
         assertNull(temporary.finishAfterMission(7, at, 1))
     }
 
-    @Test fun emergencyOnlyStopsTheMatchingUnfinishedMission() {
-        assertSame(ring, ring.finishEmergencyOccurrence(7, at - 1))
-        val completed = ring.copy(missionIndex = ring.missions.size)
-        assertSame(completed, completed.finishEmergencyOccurrence(7, at))
-        assertNull(ring.finishEmergencyOccurrence(7, at)!!.ringingAt)
-        val temporary = ring.copy(wake = ring.wake.copy(deleteAfterDismiss = true))
+    @Test fun emergencyDismissalRequiresOptInAndMatchesTheOccurrence() {
+        assertSame(ring, ring.finishEmergencyOccurrence(7, at))
+        val enabled = ring.copy(wake = ring.wake.copy(emergencyStopEnabled = true))
+        assertSame(enabled, enabled.finishEmergencyOccurrence(7, at - 1))
+        assertNull(enabled.finishEmergencyOccurrence(7, at)!!.ringingAt)
+        val withoutMissions = enabled.copy(missions = emptyList())
+        assertNull(withoutMissions.finishEmergencyOccurrence(7, at)!!.ringingAt)
+        val temporary = enabled.copy(wake = enabled.wake.copy(deleteAfterDismiss = true))
         assertNull(temporary.finishEmergencyOccurrence(7, at))
     }
 

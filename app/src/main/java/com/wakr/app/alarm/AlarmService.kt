@@ -76,6 +76,8 @@ class AlarmService : Service() {
     private var torchId: String? = null
     private var silenceJob: Job? = null
     private var effectsJob: Job? = null
+    private var muteExpiryJob: Job? = null
+    private var muteDurationSeconds = 0
     private var tts: TextToSpeech? = null
     private var shakeListener: SensorEventListener? = null
 
@@ -102,8 +104,10 @@ class AlarmService : Service() {
                     if (!active) stopSelf(startId)
                     return@launch
                 }
+                if (occurrence == (id to at) && active) return@launch
                 val settings = RuntimeAlarms.settings(this@AlarmService)
-                mutedOccurrence.value = null
+                resetMute()
+                muteDurationSeconds = alarm.wake.muteDurationSec
                 occurrence = id to at
                 current = this@AlarmService
                 val resource = listOf(R.raw.alarm_fallback, R.raw.alarm_sunrise, R.raw.alarm_daybreak)
@@ -137,7 +141,7 @@ class AlarmService : Service() {
                     return@launch
                 }
                 val settings = store.settingsNow()
-                mutedOccurrence.value = null
+                resetMute()
                 occurrence = null
                 stopEffects()
                 ring(timerNotification(this@AlarmService), settings.timers.soundUri,
@@ -229,7 +233,7 @@ class AlarmService : Service() {
                         scope.launch {
                             while (tts === engine && occurrence == (alarm.id to at)) {
                                 val time = android.text.format.DateFormat.getTimeFormat(this@AlarmService).format(java.util.Date())
-                                if (mutedOccurrence.value != (alarm.id to at)) {
+                                if (muteState.value?.untilElapsedMs == null) {
                                     engine.speak(listOf(time, alarm.label).filter { it.isNotBlank() }.joinToString(". "),
                                         TextToSpeech.QUEUE_FLUSH, null, "alarm:$at")
                                 }
@@ -299,10 +303,24 @@ class AlarmService : Service() {
         }
     }
 
+    private fun resetMute() {
+        muteExpiryJob?.cancel()
+        muteExpiryJob = null
+        muteState.value = null
+        muteDurationSeconds = 0
+    }
+
+    private fun endMute(token: Pair<Long, Long>) {
+        muteExpiryJob?.cancel()
+        muteExpiryJob = null
+        muteState.value = AlarmMute(token, null)
+        sound.resume()
+    }
+
     override fun onDestroy() {
         if (current === this) {
+            resetMute()
             current = null
-            mutedOccurrence.value = null
         }
         stopEffects()
         active = false
@@ -316,31 +334,37 @@ class AlarmService : Service() {
 
     companion object {
         private var current: AlarmService? = null
-        private val mutedOccurrence = MutableStateFlow<Pair<Long, Long>?>(null)
-        internal val muted = mutedOccurrence.asStateFlow()
+        private val muteState = MutableStateFlow<AlarmMute?>(null)
+        internal val mute = muteState.asStateFlow()
 
-        suspend fun toggleMute(id: Long, at: Long) {
+        suspend fun toggleMute(id: Long, at: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
             val token = id to at
-            val service = current?.takeIf { it.occurrence == token && it.active } ?: return
-            if (mutedOccurrence.value == token) {
-                mutedOccurrence.value = null
-                service.sound.resume()
-            } else {
-                mutedOccurrence.value = token
-                service.sound.pause()
-                service.tts?.stop()
-                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    try {
-                        RuntimeAlarms.update(service) { alarms ->
-                            alarms.map { alarm ->
-                                if (alarm.id == id && alarm.ringingAt == at && alarm.missionsRemaining) {
-                                    alarm.copy(missionMuteCount = (alarm.missionMuteCount ?: 0) + 1)
-                                } else alarm
-                            }
+            val service = current?.takeIf { it.occurrence == token && it.active } ?: return@withContext
+            if (service.muteDurationSeconds == 0) return@withContext
+            val existing = muteState.value?.takeIf { it.occurrence == token }
+            if (existing != null) {
+                if (existing.untilElapsedMs != null) service.endMute(token)
+                return@withContext
+            }
+            val duration = service.muteDurationSeconds * 1_000L
+            muteState.value = AlarmMute(token, android.os.SystemClock.elapsedRealtime() + duration)
+            service.sound.pause()
+            service.tts?.stop()
+            service.muteExpiryJob = service.scope.launch {
+                delay(duration)
+                if (current === service && service.occurrence == token) service.endMute(token)
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    RuntimeAlarms.update(service) { alarms ->
+                        alarms.map { alarm ->
+                            if (alarm.id == id && alarm.ringingAt == at && alarm.missionsRemaining) {
+                                alarm.copy(missionMuteCount = (alarm.missionMuteCount ?: 0) + 1)
+                            } else alarm
                         }
-                    } catch (error: Exception) {
-                        android.util.Log.w("AlarmService", "Unable to record mission mute", error)
                     }
+                } catch (error: Exception) {
+                    android.util.Log.w("AlarmService", "Unable to record mission mute", error)
                 }
             }
         }
@@ -409,3 +433,5 @@ class AlarmService : Service() {
                 .build()
     }
 }
+
+internal data class AlarmMute(val occurrence: Pair<Long, Long>, val untilElapsedMs: Long?)

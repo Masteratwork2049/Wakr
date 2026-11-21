@@ -44,7 +44,11 @@ data class WakeOptions(
     val rebootSurvivalMax: Int = 0,
     val stillAwakeChecksCount: Int = 0,
     val stillAwakeDelayMin: Int = 5,
+    val muteDurationSec: Int = 30,
+    val emergencyStopEnabled: Boolean = false,
 )
+
+internal val MUTE_DURATIONS_SECONDS = listOf(0, 10, 20, 30, 45, 60)
 
 enum class WakeOutcome(val label: String) {
     DISMISSED("Dismissed"), EMERGENCY_STOP("Emergency stop"), MISSED("Missed"), STILL_AWAKE_FAILED("Still-awake check failed"),

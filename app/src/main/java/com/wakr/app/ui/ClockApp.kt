@@ -59,7 +59,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -341,7 +340,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                 Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
-            snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = DOCK_RESERVE)) },
+            snackbarHost = { SwipeAwaySnackbarHost(snackbar, Modifier.padding(bottom = DOCK_RESERVE)) },
             topBar = {
                 if ((activeTab == Tab.ALARMS && alarmSelectionCount > 0) ||
                     (activeTab == Tab.WORLD && worldPresentation.deletionSelection.value.isNotEmpty())) {

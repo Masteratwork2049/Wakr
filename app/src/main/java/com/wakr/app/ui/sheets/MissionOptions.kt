@@ -3,6 +3,8 @@ package com.wakr.app.ui.sheets
 import android.net.Uri
 import android.provider.DocumentsContract
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import com.wakr.app.ui.SwipeAwayBanner
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,11 +13,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -44,6 +48,12 @@ internal fun MissionOptions(
     var edit by remember { mutableStateOf<AlarmMission?>(null) }
     var preview by remember { mutableStateOf<AlarmMission?>(null) }
     var removed by remember { mutableStateOf<Pair<Int, AlarmMission>?>(null) }
+    LaunchedEffect(removed) {
+        if (removed != null) {
+            delay(5_000)
+            removed = null
+        }
+    }
     DifficultyOptions(wake, onWake)
     Spacer(Modifier.height(12.dp))
     val summary = when (missions.size) {
@@ -82,12 +92,29 @@ internal fun MissionOptions(
             }
         }
         removed?.let { (index, mission) ->
-            Snackbar(modifier = Modifier.padding(8.dp), action = {
-                TextButton(onClick = {
-                    onMissions(missions.toMutableList().apply { add(index.coerceAtMost(size), mission) })
-                    removed = null
-                }) { Text("Undo") }
-            }) { Text("Mission removed") }
+            key(mission.id) {
+                SwipeAwayBanner(onDismiss = { removed = null }, modifier = Modifier.padding(8.dp)) {
+                    Surface(
+                        onClick = {
+                            onMissions(missions.toMutableList().apply { add(index.coerceAtMost(size), mission) })
+                            removed = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.inverseSurface,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.AutoMirrored.Outlined.Undo, contentDescription = null)
+                            Text("Undo", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
         }
         FilledTonalButton(onClick = { adding = true }, modifier = Modifier.padding(12.dp)) { Text("Add mission") }
     }
@@ -199,6 +226,8 @@ private fun WakeBehaviorOptions(
     }
     AlarmEditorSection("Sound and vibration", "$soundSummary · ${wake.volumePercent}%", Icons.Outlined.VolumeUp) {
         soundRows?.invoke()
+        NumberChoice("Mute duration", wake.muteDurationSec, MUTE_DURATIONS_SECONDS,
+            { if (it == 0) "Off" else "$it seconds" }) { save(wake.copy(muteDurationSec = it)) }
         ChoiceRow("Sound mode", wake.soundMode, AlarmSoundMode.entries, {
             when (it) {
                 AlarmSoundMode.ONE -> "One sound"
