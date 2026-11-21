@@ -49,6 +49,7 @@ data class Alarm(
     val firstRingAt: Long? = null,
     val privateMissionCount: Int = 0,
     val isWakeCheckRetry: Boolean = false,
+    val missionMuteCount: Int? = null,
 ) {
     val isOneShot: Boolean get() = days.isEmpty()
 
@@ -253,3 +254,7 @@ fun LocalDateTime.parts(use24h: Boolean): Triple<String, String, String?> {
     val ap = if (use24h) null else if (hour < 12) "AM" else "PM"
     return Triple("%02d".format(h), "%02d".format(minute), ap)
 }
+
+internal fun appendTimerDigits(current: String, digits: String): String =
+    if (digits.isEmpty() || digits.any { it !in '0'..'9' } || current.length + digits.length > 6) current
+    else if (current.isEmpty()) digits.trimStart('0') else current + digits

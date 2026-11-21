@@ -42,21 +42,22 @@ internal object WakeChecks {
     private const val CONFIRM = "wakr.wake.confirm"
     private val mutex = Mutex()
 
-    private data class Check(val alarm: Alarm, val due: Long, val dismissed: Long, val remaining: Int, val prompted: Boolean = false) {
+    private data class Check(val alarm: Alarm, val due: Long, val dismissed: Long, val remaining: Int, val prompted: Boolean = false, val passedCount: Int = 0) {
         fun encode() = JSONObject().put("alarm", encodeAlarms(listOf(alarm))).put("due", due)
-            .put("dismissed", dismissed).put("remaining", remaining).put("prompted", prompted).toString()
+            .put("dismissed", dismissed).put("remaining", remaining).put("prompted", prompted).put("passedCount", passedCount).toString()
     }
 
     private fun decode(raw: String): Check? = runCatching {
         val json = JSONObject(raw)
         Check(parseAlarms(json.getString("alarm")).single(), json.getLong("due"), json.getLong("dismissed"),
-            json.getInt("remaining"), json.getBoolean("prompted"))
+            json.getInt("remaining"), json.getBoolean("prompted"), json.optInt("passedCount"))
     }.getOrNull()
 
     internal fun log(alarm: Alarm, at: Long, dismissed: Long?, outcome: WakeOutcome, passed: Boolean? = null): WakeUpLog {
         val first = alarm.firstRingAt ?: at
         return WakeUpLog(first xor (alarm.id shl 32), alarm.id, alarm.label, first, first, dismissed,
-            alarm.snoozeCount, passed, outcome == WakeOutcome.DISMISSED && alarm.snoozeCount == 0 && passed != false, outcome)
+            alarm.snoozeCount, passed, outcome == WakeOutcome.DISMISSED && alarm.snoozeCount == 0 && passed != false, outcome,
+            missionMuteCount = alarm.missionMuteCount)
     }
 
     private fun preferences(c: Context) = c.getSharedPreferences("wake_checks", Context.MODE_PRIVATE)
@@ -128,20 +129,23 @@ internal object WakeChecks {
         }
         if (!check.prompted || (action != EXPIRE && action != CONFIRM)) return
         manager.cancel(tag(token), 0)
-        prefs.edit().remove(token.toString()).apply()
         val confirmed = action == CONFIRM && now < check.due
-        if (confirmed && check.remaining > 1) {
+        val passedCount = check.passedCount + if (confirmed) 1 else 0
+        val hasMore = confirmed && check.remaining > 1
+        if (hasMore) {
             save(c, check.copy(due = now + check.alarm.wake.stillAwakeDelayMin.coerceIn(3, 15) * 60_000,
-                remaining = check.remaining - 1, prompted = false))
-            return
+                remaining = check.remaining - 1, prompted = false, passedCount = passedCount))
+        } else {
+            prefs.edit().remove(token.toString()).apply()
         }
+        val outcome = if (confirmed) WakeOutcome.DISMISSED else WakeOutcome.STILL_AWAKE_FAILED
         val store = ClockStore(c)
-        store.putWakeLog(log(check.alarm, check.dismissed, check.dismissed,
-            if (confirmed) WakeOutcome.DISMISSED else WakeOutcome.STILL_AWAKE_FAILED, confirmed))
+        store.putWakeLog(log(check.alarm, check.dismissed, check.dismissed, outcome, confirmed.takeUnless { hasMore })
+            .copy(completedWakeChecks = check.passedCount + 1, passedWakeChecks = passedCount))
         if (!confirmed) {
             val due = now + 1800
             val retry = check.alarm.copy(id = store.nextId(), enabled = true, pausedByGroup = false, days = emptySet(),
-                ringingAt = null, firstRingAt = null, missionIndex = 0, missedRetries = 0, snoozeCount = 0,
+                ringingAt = null, firstRingAt = null, missionMuteCount = null, missionIndex = 0, missedRetries = 0, snoozeCount = 0,
                 rebootCount = 0, skippedOccurrenceDate = null, skippedOccurrenceMillis = null, snoozedUntilMillis = null,
                 isWakeCheckRetry = true, wake = check.alarm.wake.copy(relativeTriggerMillis = due, scheduledDateEpochDay = null,
                     pausedUntilEpochDay = null, deleteAfterDismiss = true, volumePercent = 100, fadeInSeconds = 0,

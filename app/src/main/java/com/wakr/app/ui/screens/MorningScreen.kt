@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.wakr.app.core.Alarm
 import com.wakr.app.core.ScheduledAlarm
 import com.wakr.app.core.WakeUpLog
+import com.wakr.app.core.morningHistory
 import com.wakr.app.core.morningSchedule
 import com.wakr.app.ui.luminousElasticClickable
 import com.wakr.app.ui.rememberWallTicker
@@ -70,7 +71,7 @@ internal fun MorningScreen(
     val calendar = remember(locale) {
         DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEMMMd"), locale)
     }
-    val recent = remember(history) { history.sortedByDescending { it.firstRingAt } }
+    val stats = remember(history, today, zone) { morningHistory(history, today, zone) }
     val colors = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxSize(), contentPadding = padding,
@@ -107,21 +108,23 @@ internal fun MorningScreen(
                         style = MaterialTheme.typography.bodyLarge)
                 }
             }
-            if (recent.isNotEmpty()) {
-                item {
-                    Text("Recent alarms", Modifier.padding(top = 12.dp), color = colors.onSurface,
-                        style = MaterialTheme.typography.titleLarge)
+            item(key = "today-summary") { MorningToday(stats) }
+            item(key = "week-summary") { MorningWeekSummary(stats) }
+            item(key = "wake-streak") { MorningStreak(stats) }
+            item(key = "dismissal-chart") { MorningDismissalChart(stats, calendar, locale) }
+            item(key = "wake-stat-grid") { MorningStatGrid(stats, locale) }
+            item(key = "recent-alarms-heading") {
+                Text("Recent alarms", Modifier.padding(top = 12.dp), color = colors.onSurface,
+                    style = MaterialTheme.typography.titleLarge)
+            }
+            if (stats.recent.isEmpty()) {
+                item(key = "empty-history") {
+                    Text("No alarm history yet.", color = colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge)
                 }
-                items(recent, key = { "history-${it.id}" }) { entry ->
-                    val at = Instant.ofEpochMilli(entry.firstRingAt).atZone(zone)
-                    Column(Modifier.fillMaxWidth().background(colors.surfaceContainerLow, RoundedCornerShape(20.dp))
-                        .padding(16.dp)) {
-                        Text(entry.alarmLabel.ifBlank { "Alarm" }, color = colors.onSurface,
-                            style = MaterialTheme.typography.titleMedium)
-                        Text("${calendar.format(at)} · ${clock.format(at)} · ${entry.outcome.label}",
-                            color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
+            }
+            items(stats.recent, key = { "history-${it.id}" }) { entry ->
+                RecentAlarmRow(entry, zone, clock, calendar)
             }
         }
     }

@@ -89,6 +89,22 @@ class WakeStoreTest {
         }
     }
 
+    @Test fun wakeMetricsSurviveHistoryAndAlarmRoundTrips() {
+        val alarm = original.copy(missionMuteCount = 2, snoozeCount = 1, firstRingAt = 2_000)
+        assertEquals(alarm, parseAlarms(encodeAlarms(listOf(alarm))).single())
+        val entry = WakeUpLog(21, alarm.id, alarm.label, 2_000, 2_000, 3_000, 1, false, false,
+            WakeOutcome.STILL_AWAKE_FAILED, missionMuteCount = 2, completedWakeChecks = 4, passedWakeChecks = 3)
+        assertEquals(entry, entry.toJson().toWakeUpLog())
+        val legacy = entry.toJson().apply {
+            remove("missionMuteCount")
+            remove("completedWakeChecks")
+            remove("passedWakeChecks")
+        }.toWakeUpLog()
+        assertNull(legacy.missionMuteCount)
+        assertNull(legacy.completedWakeChecks)
+        assertNull(legacy.passedWakeChecks)
+    }
+
     @Test fun missionOrderPolicyRegistrationAndHistorySurviveRestartAndDeletion() = runBlocking {
         val code = ScanTarget(ScanKind.BARCODE, "00012345", "Kitchen")
         val tag = ScanTarget(ScanKind.NFC, "00012345", "Desk")

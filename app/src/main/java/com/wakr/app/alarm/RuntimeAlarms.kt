@@ -53,7 +53,8 @@ internal object RuntimeAlarms {
                 skippedOccurrenceDate = result.skippedOccurrenceDate, skippedOccurrenceMillis = result.skippedOccurrenceMillis,
                 ringingAt = result.ringingAt, missedRetries = result.missedRetries,
                 snoozeCount = result.snoozeCount, missionIndex = result.missionIndex,
-                firstRingAt = result.firstRingAt, rebootCount = result.rebootCount)
+                firstRingAt = result.firstRingAt, rebootCount = result.rebootCount,
+                missionMuteCount = result.missionMuteCount)
         } }
         prefs.edit().also { editor -> changes.keys.forEach(editor::remove) }.apply()
     }

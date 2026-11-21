@@ -48,6 +48,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 val continuation = alarm.snoozedUntilMillis == at
                 alarm.copy(ringingAt = at, firstRingAt = alarm.firstRingAt?.takeIf { continuation } ?: at,
                     snoozeCount = alarm.snoozeCount.takeIf { continuation } ?: 0,
+                    missionMuteCount = if (continuation) alarm.missionMuteCount else 0,
                     missionIndex = alarm.missionIndex.takeIf { continuation } ?: 0,
                     rebootCount = alarm.rebootCount.takeIf { continuation } ?: 0,
                     missedRetries = if (continuation) alarm.missedRetries else 0, enabled = !alarm.isOneShot, snoozedUntilMillis = null, skippedOccurrenceMillis = at.takeIf { it > 0 } ?: alarm.skippedOccurrenceMillis,

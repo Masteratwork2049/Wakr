@@ -14,12 +14,10 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.wakr.app.data.toJson
 import com.wakr.app.data.toWakeOptions
@@ -57,12 +55,10 @@ internal fun AlarmSchedulingOptions(
     var dialog by rememberSaveable { mutableStateOf(if (initialRelative) "Alarm in…" else "") }
     val zone = wake.timeZoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
     if (part != AlarmSchedulePart.SCHEDULE) {
-        AlarmOptionRow("Type time", Icons.Outlined.Edit) { dialog = "Type time" }
         if (!editing) {
-            AlarmOptionDivider()
             AlarmOptionRow("Alarm in…", Icons.Outlined.Schedule) { dialog = "Alarm in…" }
+            AlarmOptionDivider()
         }
-        AlarmOptionDivider()
         AlarmOptionRow("Repeat", Icons.Outlined.Repeat, if (once) "Once" else "Selected days") { dialog = "Repeat" }
         if (once) {
             AlarmOptionDivider()
@@ -105,29 +101,23 @@ internal fun AlarmSchedulingOptions(
         }, dismissButton = { TextButton(onClick = { apply(null) }) { Text("Clear") } }) { DatePicker(picker) }
         return
     }
-    if (dialog == "Type time" || dialog == "Alarm in…") {
-        val relative = dialog == "Alarm in…"
-        var h by rememberSaveable(dialog) { mutableIntStateOf(if (relative) 0 else hour) }
-        var m by rememberSaveable(dialog) { mutableIntStateOf(if (relative) 10 else minute) }
-        var digits by rememberSaveable { mutableStateOf("%02d%02d".format(java.util.Locale.ROOT, hour, minute)) }
-        val typed = digits.padStart(4, '0')
-        val valid = digits.length in 3..4 && typed.take(2).toIntOrNull() in 0..23 && typed.takeLast(2).toIntOrNull() in 0..59
+    if (dialog == "Alarm in…") {
+        var h by rememberSaveable { mutableIntStateOf(0) }
+        var m by rememberSaveable { mutableIntStateOf(10) }
         AlertDialog(onDismissRequest = { dialog = "" }, title = { Text(dialog) }, text = {
-            if (relative) Column {
+            Column {
                 Text("Hours and minutes")
                 Row {
                     AlarmWheel(Modifier.weight(1f), (0..24).toList(), h, Int::toString) { h = it }
                     AlarmWheel(Modifier.weight(1f), (0..59).toList(), m, Int::toString) { m = it }
                 }
-            } else OutlinedTextField(digits, { if (it.length <= 4 && it.all(Char::isDigit)) digits = it },
-                label = { Text("24-hour time (HHMM)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-        }, confirmButton = { TextButton(enabled = if (relative) h + m > 0 else valid, onClick = {
-            if (relative) {
-                val at = java.time.ZonedDateTime.now(zone).plusHours(h.toLong()).plusMinutes(m.toLong())
-                setDays(emptySet())
-                setWake(wake.copy(relativeTriggerMillis = at.toInstant().toEpochMilli(), scheduledDateEpochDay = at.toLocalDate().toEpochDay(), pausedUntilEpochDay = null))
-                setTime(at.toLocalTime())
-            } else setTime(LocalTime.of(typed.take(2).toInt(), typed.takeLast(2).toInt()))
+            }
+        }, confirmButton = { TextButton(enabled = h + m > 0, onClick = {
+            val at = java.time.ZonedDateTime.now(zone).plusHours(h.toLong()).plusMinutes(m.toLong())
+            setDays(emptySet())
+            setWake(wake.copy(relativeTriggerMillis = at.toInstant().toEpochMilli(),
+                scheduledDateEpochDay = at.toLocalDate().toEpochDay(), pausedUntilEpochDay = null))
+            setTime(at.toLocalTime())
             dialog = ""
         }) { Text("Set") } }, dismissButton = { TextButton(onClick = { dialog = "" }) { Text("Cancel") } })
         return

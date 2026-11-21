@@ -319,7 +319,7 @@ class AlarmService : Service() {
         private val mutedOccurrence = MutableStateFlow<Pair<Long, Long>?>(null)
         internal val muted = mutedOccurrence.asStateFlow()
 
-        fun toggleMute(id: Long, at: Long) {
+        suspend fun toggleMute(id: Long, at: Long) {
             val token = id to at
             val service = current?.takeIf { it.occurrence == token && it.active } ?: return
             if (mutedOccurrence.value == token) {
@@ -329,6 +329,19 @@ class AlarmService : Service() {
                 mutedOccurrence.value = token
                 service.sound.pause()
                 service.tts?.stop()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    try {
+                        RuntimeAlarms.update(service) { alarms ->
+                            alarms.map { alarm ->
+                                if (alarm.id == id && alarm.ringingAt == at && alarm.missionsRemaining) {
+                                    alarm.copy(missionMuteCount = (alarm.missionMuteCount ?: 0) + 1)
+                                } else alarm
+                            }
+                        }
+                    } catch (error: Exception) {
+                        android.util.Log.w("AlarmService", "Unable to record mission mute", error)
+                    }
+                }
             }
         }
 

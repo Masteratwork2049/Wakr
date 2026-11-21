@@ -499,7 +499,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                             draft = vm.draftDuration,
                             nowElapsedMillis = now,
                             presets = settings.timers.presets,
-                            onDigit = vm::pressDigit,
+                            onDigits = vm::pressTimerDigits,
                             onBackspace = vm::backspace,
                             onResetDraft = vm::resetTimerDraft,
                             onPreset = vm::setTimerPreset,

@@ -208,7 +208,7 @@ class AlarmRingActivity : ComponentActivity() {
                                 val emergency: (() -> Unit)? = if (canOpenMission) ({
                                     scope.launch { closeRing(ClockActionReceiver.ACTION_EMERGENCY, Offset.Zero) }
                                 }) else null
-                                val mute = { AlarmService.toggleMute(id, at) }
+                                val mute: () -> Unit = { scope.launch { AlarmService.toggleMute(id, at) } }
                                 val name = current.label.ifBlank { label.ifBlank { "Alarm" } }
                                 if (showMission && canOpenMission) {
                                     val count = maxOf(current.ringMissions.size, current.privateMissionCount, 1)
@@ -319,21 +319,19 @@ internal fun AlarmRingingScreen(
                     AlarmSoundActions(muted, onMute, onEmergency)
                 }
             }.single().measure(loose)
-            val gap = 8.dp.roundToPx()
+            val gap = 12.dp.roundToPx()
             val available = constraints.minHeight - title.height - controls.height - gap * 2
             val cap = minOf(widthCap, (available - 4.dp.roundToPx()).toDp().coerceAtLeast(56.dp))
             val clock = subcompose("clock") {
                 RingingClockReadout(time, is24Hour, cap, Modifier.fillMaxWidth())
             }.single().measure(loose)
-            val clockSpace = maxOf(clock.height, available)
-            val height = title.height + clockSpace + controls.height + gap * 2
+            val occupied = title.height + clock.height + controls.height + gap * 2
+            val height = maxOf(constraints.minHeight, occupied)
             val controlsTop = height - controls.height
-            val clockTop = title.height + gap + (clockSpace - clock.height) / 2
+            val clockTop = title.height + (controlsTop - title.height - clock.height) / 2
             layout(constraints.maxWidth, height) {
                 title.placeRelative(0, 0)
-                clock.placeRelativeWithLayer(0, clockTop) {
-                    scaleY = clockSpace.toFloat() / clock.height.coerceAtLeast(1)
-                }
+                clock.placeRelative(0, clockTop)
                 controls.placeRelative(0, controlsTop)
             }
         }
@@ -374,7 +372,7 @@ internal fun RingingClockReadout(
 ) {
     val spokenTime = time.format(java.time.format.DateTimeFormatter.ofPattern(if (use24h) "HH:mm" else "h:mm a"))
     AlarmTimeReadout(time = time, use24h = use24h, capHeight = cap, ink = MaterialTheme.colorScheme.onSurface,
-        weight = ClockFace.WEIGHT_OFF + 24, modifier = modifier.clearAndSetSemantics { contentDescription = spokenTime })
+        weight = ClockFace.WEIGHT_OFF, modifier = modifier.clearAndSetSemantics { contentDescription = spokenTime })
 }
 
 @Composable

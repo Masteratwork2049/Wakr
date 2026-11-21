@@ -115,6 +115,9 @@ internal fun WakeUpLog.toJson() = JSONObject()
     .put("stillAwakePassed", stillAwakePassed)
     .put("wasCleanWakeUp", wasCleanWakeUp)
     .put("outcome", outcome.name)
+    .put("missionMuteCount", missionMuteCount)
+    .put("completedWakeChecks", completedWakeChecks)
+    .put("passedWakeChecks", passedWakeChecks)
 
 internal fun JSONObject.toWakeUpLog() = WakeUpLog(
     id = getLong("id"),
@@ -127,4 +130,7 @@ internal fun JSONObject.toWakeUpLog() = WakeUpLog(
     stillAwakePassed = if (isNull("stillAwakePassed")) null else getBoolean("stillAwakePassed"),
     wasCleanWakeUp = getBoolean("wasCleanWakeUp"),
     outcome = WakeOutcome.valueOf(getString("outcome")),
+    missionMuteCount = intOrNull("missionMuteCount"),
+    completedWakeChecks = intOrNull("completedWakeChecks"),
+    passedWakeChecks = intOrNull("passedWakeChecks"),
 )

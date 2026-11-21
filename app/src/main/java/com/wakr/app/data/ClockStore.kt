@@ -324,6 +324,7 @@ internal fun encodeAlarms(list: List<Alarm>) = JSONArray().apply {
                 .put("missionIndex", a.missionIndex)
                 .put("rebootCount", a.rebootCount)
                 .put("firstRingAt", a.firstRingAt)
+                .put("missionMuteCount", a.missionMuteCount)
                 .put("privateMissionCount", a.privateMissionCount)
                 .put("isWakeCheckRetry", a.isWakeCheckRetry)
                 .put("time", a.time.toSecondOfDay())
@@ -351,6 +352,7 @@ internal fun parseAlarms(s: String): List<Alarm> = runCatching {
             missedRetries = o.optInt("missedRetries"),
             snoozeCount = o.optInt("snoozeCount"), missionIndex = o.optInt("missionIndex"),
             rebootCount = o.optInt("rebootCount"), firstRingAt = o.longOrNull("firstRingAt"),
+            missionMuteCount = o.opt("missionMuteCount")?.toString()?.toIntOrNull(),
             privateMissionCount = o.optInt("privateMissionCount"), isWakeCheckRetry = o.optBoolean("isWakeCheckRetry"),
             time = LocalTime.ofSecondOfDay(o.getLong("time")),
             label = o.optString("label", ""),

@@ -62,4 +62,7 @@ data class WakeUpLog(
     val stillAwakePassed: Boolean?,
     val wasCleanWakeUp: Boolean,
     val outcome: WakeOutcome,
+    val missionMuteCount: Int? = null,
+    val completedWakeChecks: Int? = null,
+    val passedWakeChecks: Int? = null,
 )

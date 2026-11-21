@@ -1,5 +1,7 @@
 package com.wakr.app.ui
 
+import com.wakr.app.core.appendTimerDigits
+
 import android.app.Application
 import android.os.SystemClock
 import androidx.compose.runtime.Composable
@@ -275,10 +277,8 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
                 .plusSeconds(d.substring(4, 6).toLong())
         }
 
-    fun pressDigit(c: Char) {
-        if (timerDigits.length >= 6) return
-        if (timerDigits.isEmpty() && c == '0') return
-        timerDigits += c
+    fun pressTimerDigits(digits: String) {
+        timerDigits = appendTimerDigits(timerDigits, digits)
     }
 
     fun backspace() {

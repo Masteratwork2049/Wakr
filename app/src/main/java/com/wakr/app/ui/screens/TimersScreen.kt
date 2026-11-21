@@ -119,7 +119,7 @@ fun TimersScreen(
     draft: Duration,
     nowElapsedMillis: Long,
     presets: List<Int> = DEFAULT_TIMER_PRESETS,
-    onDigit: (Char) -> Unit,
+    onDigits: (String) -> Unit,
     onBackspace: () -> Unit,
     onResetDraft: () -> Unit,
     onPreset: (Int) -> Unit,
@@ -190,7 +190,7 @@ fun TimersScreen(
                     ExpandedSetTimerBody(
                         draft = draft,
                         presets = presets,
-                        onDigit = onDigit,
+                        onDigits = onDigits,
                         onBackspace = onBackspace,
                         onResetDraft = onResetDraft,
                         onPreset = onPreset,
@@ -254,7 +254,7 @@ fun TimersScreen(
                             keyHeight = keyHeight,
                             draft = draft,
                             presets = presets,
-                            onDigit = onDigit,
+                            onDigits = onDigits,
                             onBackspace = onBackspace,
                             onResetDraft = onResetDraft,
                             onPreset = onPreset,
@@ -644,7 +644,7 @@ private fun TickerCell(
 private fun ExpandedSetTimerBody(
     draft: Duration,
     presets: List<Int>,
-    onDigit: (Char) -> Unit,
+    onDigits: (String) -> Unit,
     onBackspace: () -> Unit,
     onResetDraft: () -> Unit,
     onPreset: (Int) -> Unit,
@@ -663,9 +663,9 @@ private fun ExpandedSetTimerBody(
         leftPane = {
             ScrollPane(Modifier.padding(vertical = 8.dp, horizontal = 8.dp)) {
                 Keypad(
-                    onDigit = { char ->
+                    onDigits = { digits ->
                         isLongPressReset = false
-                        onDigit(char)
+                        onDigits(digits)
                     },
                     onBackspace = {
                         isLongPressReset = false
@@ -877,7 +877,7 @@ private fun SetTimerBody(
     keyHeight: Dp,
     draft: Duration,
     presets: List<Int>,
-    onDigit: (Char) -> Unit,
+    onDigits: (String) -> Unit,
     onBackspace: () -> Unit,
     onResetDraft: () -> Unit,
     onPreset: (Int) -> Unit,
@@ -907,9 +907,9 @@ private fun SetTimerBody(
         Spacer(Modifier.height(6.dp))
         Keypad(
             keyHeight = keyHeight,
-            onDigit = { char ->
+            onDigits = { digits ->
                 isLongPressReset = false
-                onDigit(char)
+                onDigits(digits)
             },
             onBackspace = {
                 isLongPressReset = false
@@ -1009,7 +1009,7 @@ private fun PresetButton(seconds: Int, onClick: () -> Unit, onLongClick: () -> U
 }
 
 @Composable
-private fun Keypad(keyHeight: Dp = 76.dp, onDigit: (Char) -> Unit, onBackspace: () -> Unit, onResetDraft: () -> Unit) {
+private fun Keypad(keyHeight: Dp = 76.dp, onDigits: (String) -> Unit, onBackspace: () -> Unit, onResetDraft: () -> Unit) {
     val view = LocalView.current
     val rows = listOf("123", "456", "789")
     Column(
@@ -1018,12 +1018,12 @@ private fun Keypad(keyHeight: Dp = 76.dp, onDigit: (Char) -> Unit, onBackspace: 
     ) {
         rows.forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { c -> DigitKey(c, onDigit, Modifier.weight(1f), keyHeight) }
+                row.forEach { c -> DigitKey(c.toString(), onDigits, Modifier.weight(1f), keyHeight) }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Spacer(Modifier.weight(1f))
-            DigitKey('0', onDigit, Modifier.weight(1f), keyHeight)
+            DigitKey("00", onDigits, Modifier.weight(1f), keyHeight)
+            DigitKey("0", onDigits, Modifier.weight(1f), keyHeight)
             KeyBox(
                 height = keyHeight,
                 modifier = Modifier.weight(1f),
@@ -1050,14 +1050,14 @@ private fun Keypad(keyHeight: Dp = 76.dp, onDigit: (Char) -> Unit, onBackspace: 
 }
 
 @Composable
-private fun DigitKey(digit: Char, onDigit: (Char) -> Unit, modifier: Modifier = Modifier, keyHeight: Dp = 76.dp) {
+private fun DigitKey(digits: String, onDigits: (String) -> Unit, modifier: Modifier = Modifier, keyHeight: Dp = 76.dp) {
     val view = LocalView.current
     KeyBox(height = keyHeight, modifier = modifier, onClick = {
-        onDigit(digit)
+        onDigits(digits)
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-    }, label = digit.toString()) {
+    }, label = digits) {
         Text(
-            digit.toString(),
+            digits,
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontFamily = ClockFace.family(opticalSize = 30f, width = ClockFace.NORMAL, weight = 500),
             ),
