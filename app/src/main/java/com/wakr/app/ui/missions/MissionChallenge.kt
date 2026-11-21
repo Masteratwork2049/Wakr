@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -21,6 +22,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import com.wakr.app.core.*
 import kotlinx.coroutines.delay
@@ -97,8 +99,9 @@ private fun MathChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
     var incorrect by rememberSaveable { mutableStateOf(false) }
     val count = mission.roundsOrCount.coerceIn(1, 20)
     val problem = remember(solved) { mathProblem(mission.difficulty, Random(seed + solved)) }
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val colors = MaterialTheme.colorScheme
+    val panelHeight = LocalMissionChallengeHeight.current
+    val colors = MaterialTheme.colorScheme
+    Layout(modifier = Modifier.fillMaxWidth(), content = {
         Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = colors.surfaceContainerHighest) {
             Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -115,9 +118,9 @@ private fun MathChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
             }
         }
         listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("Clear", "0", "Check")).forEach { keys ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 keys.forEach { key ->
-                    FilledTonalButton(modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                    FilledTonalButton(modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 52.dp),
                         enabled = solved < count && (key != "Check" || digits.isNotEmpty()),
                         colors = if (key == "Check") ButtonDefaults.filledTonalButtonColors(
                             containerColor = colors.primary, contentColor = colors.onPrimary,
@@ -134,6 +137,29 @@ private fun MathChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit) {
                         }
                     }, contentPadding = PaddingValues(3.dp)) { Text(key) }
                 }
+            }
+        }
+    }) { measurables, constraints ->
+        val gap = 6.dp.roundToPx()
+        val loose = constraints.copy(minHeight = 0)
+        val problem = measurables[0].measure(loose)
+        val answer = measurables[1].measure(loose)
+        val rows = measurables.drop(2)
+        // MissionScreen applies 16 dp of padding above and below the challenge.
+        val available = (panelHeight - 32.dp).roundToPx()
+        val keypadHeight = (available - problem.height - answer.height - gap * (measurables.size - 1))
+            .coerceAtLeast(52.dp.roundToPx() * rows.size)
+        val keys = rows.mapIndexed { index, row ->
+            val height = keypadHeight / rows.size + if (index < keypadHeight % rows.size) 1 else 0
+            row.measure(loose.copy(minHeight = height.coerceAtMost(loose.maxHeight)))
+        }
+        val sections = listOf(problem, answer) + keys
+        val height = sections.sumOf { it.height } + gap * (sections.size - 1)
+        layout(constraints.maxWidth, constraints.constrainHeight(height)) {
+            var top = 0
+            for (section in sections) {
+                section.placeRelative(0, top)
+                top += section.height + gap
             }
         }
     }
