@@ -16,8 +16,14 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Nfc
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -53,7 +59,7 @@ private fun ScanNfc(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) {
     val result by rememberUpdatedState(onScan)
     var enabled by remember { mutableStateOf(adapter?.isEnabled == true) }
     if (adapter == null || activity == null) {
-        Text("NFC is unavailable on this device.")
+        MissionScannerPrompt(Icons.Outlined.Nfc, "NFC is unavailable on this device.")
         ScannerFallback(onUnavailable)
         return
     }
@@ -80,7 +86,8 @@ private fun ScanNfc(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) {
             runCatching { adapter.disableReaderMode(activity) }
         }
     }
-    Text(if (enabled) "Hold the phone near the NFC tag." else "Turn on NFC in Android Settings.")
+    MissionScannerPrompt(Icons.Outlined.Nfc,
+        if (enabled) "Hold the phone near the NFC tag." else "Turn on NFC in Android Settings.")
     if (!enabled) ScannerFallback(onUnavailable)
 }
 
@@ -95,7 +102,7 @@ private fun ScanBarcode(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) 
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     if (!granted) {
-        Text("Camera access is required to scan a code.")
+        MissionScannerPrompt(Icons.Outlined.QrCodeScanner, "Camera access is required to scan a code.")
         FilledTonalButton(onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text("Allow camera access") }
         ScannerFallback(onUnavailable)
         return
@@ -155,10 +162,31 @@ private fun ScanBarcode(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) 
         }
     }
     if (error) {
-        Text("The camera could not start. Check whether another app is using it.")
+        MissionScannerPrompt(Icons.Outlined.QrCodeScanner,
+            "The camera could not start. Check whether another app is using it.")
         ScannerFallback(onUnavailable)
-    } else AndroidView(factory = { view }, modifier = Modifier.fillMaxWidth().height(220.dp))
-    Text("Center the code in the camera preview.")
+    } else {
+        AndroidView(factory = { view }, modifier = Modifier.fillMaxWidth().missionSpace(220.dp))
+        Text("Center the code in the camera preview.")
+    }
+}
+
+@Composable
+internal fun MissionScannerPrompt(icon: ImageVector, instruction: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().missionSpace(120.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(instruction, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+        }
+    }
 }
 
 @Composable

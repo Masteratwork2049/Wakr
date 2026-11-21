@@ -239,14 +239,14 @@ private fun WakeBehaviorOptions(
     }
     AlarmEditorSection("Sound and vibration", "$soundSummary · ${wake.volumePercent}%", Icons.Outlined.VolumeUp) {
         soundRows?.invoke()
+        if (wake.maxMutes != 0) {
+            NumberChoice("Mute duration", wake.muteDurationSec, MUTE_DURATIONS_SECONDS,
+                { if (it == 0) "Off" else "$it seconds" }) { save(wake.copy(muteDurationSec = it)) }
+        }
         NumberChoice("Number of mutes", if (wake.muteDurationSec == 0) 0 else wake.maxMutes ?: -1,
             (0..5).toList() + -1, { when (it) { 0 -> "Off"; -1 -> "Unlimited"; else -> it.toString() } }) {
             save(wake.copy(maxMutes = it.takeUnless { count -> count == -1 },
                 muteDurationSec = if (it != 0 && wake.muteDurationSec == 0) 30 else wake.muteDurationSec))
-        }
-        if (wake.maxMutes != 0) {
-            NumberChoice("Mute duration", wake.muteDurationSec, MUTE_DURATIONS_SECONDS,
-                { if (it == 0) "Off" else "$it seconds" }) { save(wake.copy(muteDurationSec = it)) }
         }
         if (wake.muteDurationSec != 0 && wake.maxMutes != 0 && wake.maxMutes != 1) {
             NumberChoice("Mute gap", wake.muteGapSeconds, listOf(30, 45, 60), { seconds ->

@@ -7,11 +7,15 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Nfc
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -22,6 +26,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import com.wakr.app.core.*
@@ -58,7 +64,7 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
         }
         // Each challenge may emit instructions, feedback, and controls separately.
         // Keep them in a vertical layout even inside the ringing screen’s touch tracker.
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        MissionContent {
             when (mission.type) {
                 MissionType.MATH -> MathChallenge(mission, seed, ::pass)
                 MissionType.MEMORY -> MemoryChallenge(mission, seed, ::pass)
@@ -74,7 +80,10 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
                             mission.copy(difficulty = MissionDifficulty.HARD, roundsOrCount = 3), seed, ::pass,
                         )
                         target == null -> {
-                            Text("This mission needs a registered item.")
+                            MissionScannerPrompt(
+                                if (mission.type == MissionType.NFC) Icons.Outlined.Nfc else Icons.Outlined.QrCodeScanner,
+                                "This mission needs a registered item.",
+                            )
                             if (allowScannerFallback) TextButton(onClick = { fallback = true }) {
                                 Text("Solve a math challenge")
                             }
@@ -87,6 +96,49 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+private data class MissionSpace(val minimumHeight: Dp, val weight: Int)
+
+/** Content can grow into its panel while keeping a usable height when the panel must scroll. */
+internal fun Modifier.missionSpace(minimumHeight: Dp, weight: Int = 1): Modifier =
+    layoutId(MissionSpace(minimumHeight, weight)).heightIn(min = minimumHeight)
+
+@Composable
+private fun MissionContent(content: @Composable () -> Unit) {
+    val panelHeight = LocalMissionChallengeHeight.current
+    Layout(content = content, modifier = Modifier.fillMaxWidth()) { measurables, constraints ->
+        val gap = 10.dp.roundToPx()
+        val loose = constraints.copy(minHeight = 0)
+        val growing = measurables.map { it.layoutId as? MissionSpace }
+        val fixed = measurables.mapIndexed { index, item ->
+            if (growing[index] == null) item.measure(loose) else null
+        }
+        val spacing = gap * (measurables.size - 1).coerceAtLeast(0)
+        val minimum = growing.sumOf { it?.minimumHeight?.roundToPx() ?: 0 }
+        val totalWeight = growing.sumOf { it?.weight ?: 0 }
+        val extra = ((panelHeight - 32.dp).roundToPx() - fixed.sumOf { it?.height ?: 0 } - minimum - spacing)
+            .coerceAtLeast(0)
+        var remaining = extra
+        var remainingWeight = totalWeight
+        val sections = measurables.mapIndexed { index, item ->
+            fixed[index] ?: run {
+                val slot = requireNotNull(growing[index])
+                val share = (remaining.toLong() * slot.weight / remainingWeight).toInt()
+                remaining -= share
+                remainingWeight -= slot.weight
+                val height = (slot.minimumHeight.roundToPx() + share).coerceAtMost(loose.maxHeight)
+                item.measure(Constraints.fixed(loose.maxWidth, height))
+            }
+        }
+        layout(constraints.maxWidth, constraints.constrainHeight(sections.sumOf { it.height } + spacing)) {
+            var top = 0
+            for (section in sections) {
+                section.placeRelative(0, top)
+                top += section.height + gap
             }
         }
     }
@@ -177,7 +229,7 @@ private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit)
     var showing by rememberSaveable { mutableStateOf(true) }
     val sequence = remember(round, board) {
         val random = Random(seed + round)
-        List(2 + mission.difficulty.ordinal + round) { random.nextInt(board * board) }
+        List(3 + mission.difficulty.ordinal + round) { random.nextInt(board * board) }
     }
     LaunchedEffect(round, retry) {
         if (!showing || round >= rounds) return@LaunchedEffect
@@ -293,7 +345,7 @@ private fun TracePattern(pattern: List<Int>, pass: () -> Unit) {
     val soft = MaterialTheme.colorScheme.outlineVariant
     val done by rememberUpdatedState(pass)
     Text("Trace the highlighted path in order from 1")
-    val root = Modifier.fillMaxWidth().height(200.dp)
+    val root = Modifier.fillMaxWidth().missionSpace(160.dp)
     Canvas(root.pointerInput(pattern) {
         fun hit(position: Offset) {
             if (position.x !in 0f..size.width.toFloat() || position.y !in 0f..size.height.toFloat()) return
@@ -332,17 +384,17 @@ private fun TypingChallenge(seed: Long, pass: () -> Unit) {
             override suspend fun getClipEntry(): ClipEntry? = null
         }
     }) {
-        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+        Surface(Modifier.fillMaxWidth().missionSpace(80.dp), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
             BasicTextField(value = written, onValueChange = {
                 if (it.length <= phrase.length && typingStepAllowed(written, it)) written = it
             },
-                modifier = Modifier.fillMaxWidth().padding(16.dp), textStyle = textStyle,
+                modifier = Modifier.fillMaxSize().padding(16.dp), textStyle = textStyle,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, autoCorrectEnabled = false),
                 decorationBox = { field -> Box { if (written.isEmpty()) Text("Type the phrase"); field() } })
         }
     }
-    FilledTonalButton(enabled = written == phrase, onClick = pass) { Text("Check") }
+    FilledTonalButton(modifier = Modifier.fillMaxWidth(), enabled = written == phrase, onClick = pass) { Text("Check") }
 }
 
 @Composable
@@ -350,14 +402,15 @@ private fun TileGrid(
     labels: List<String>, highlight: Int = -1, enabled: Boolean = true, columns: Int = 3,
     showLabels: Boolean = true, onTap: (Int) -> Unit,
 ) {
-    val height = ((LocalMissionChallengeHeight.current - 145.dp) / columns).coerceIn(48.dp, 84.dp)
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val rowGap = 4.dp
+    val minimum = 48.dp * columns + rowGap * (columns - 1)
+    Column(Modifier.fillMaxWidth().missionSpace(minimum), verticalArrangement = Arrangement.spacedBy(rowGap)) {
         repeat(columns) { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 repeat(columns) { col ->
                     val index = row * columns + col
                     FilledTonalButton(onClick = { onTap(index) }, enabled = enabled,
-                        modifier = Modifier.weight(1f).height(height).then(
+                        modifier = Modifier.weight(1f).fillMaxHeight().then(
                             if (showLabels) Modifier else Modifier.semantics { contentDescription = labels[index] },
                         ),
                         colors = if (index == highlight) ButtonDefaults.filledTonalButtonColors(
