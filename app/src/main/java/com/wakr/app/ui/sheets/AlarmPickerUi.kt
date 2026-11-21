@@ -44,10 +44,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -265,20 +267,20 @@ fun AlarmPickerSheetContent(
         Spacer(Modifier.height(8.dp))
 
         AlarmNameCard(label = label, onLabelChange = onLabelChange, clearDefault = title == "New Alarm")
+        if (showDelete) {
+            Spacer(Modifier.height(8.dp))
+            SheetHeaderButton("Duplicate alarm", primary = false, onClick = { onSave(true) })
+        }
 
         Spacer(Modifier.height(8.dp))
 
-        AlarmOptionsCard(
-            soundLabel = soundLabel,
-            vibrate = vibrate,
-            onSoundClick = onSoundClick,
-            onVibrateChange = onVibrateChange,
-        )
-
-
-        AlarmSchedulingOptions(wake, days.isEmpty(), showDelete, hour, minute, initialRelative,
-            setTime = { onHourChange(it.hour); onMinuteChange(it.minute); onPmChange(it.hour >= 12) },
-            setWake = setWake, setDays = setDays, duplicate = { onSave(true) })
+        AlarmOptionsCard(soundLabel, vibrate, onSoundClick, onVibrateChange) {
+            AlarmOptionDivider()
+            val effectiveHour = if (is24Hour) hour else hour % 12 + if (pm) 12 else 0
+            AlarmSchedulingOptions(wake, days.isEmpty(), showDelete, effectiveHour, minute, initialRelative,
+                setTime = { onHourChange(it.hour); onMinuteChange(it.minute); onPmChange(it.hour >= 12) },
+                setWake = setWake, setDays = setDays)
+        }
         if (showDelete) {
             Spacer(Modifier.height(8.dp))
             DeleteAlarmCard(onDelete = onDelete)
@@ -327,7 +329,8 @@ internal fun AlarmWheel(
     val state = rememberLazyListState(initialFirstVisibleItemIndex = initialVirtualIndex)
     val fling = rememberSnapFlingBehavior(state)
     val view = LocalView.current
-    val isInitial = remember { mutableStateOf(true) }
+    val selectCurrent by rememberUpdatedState(onSelected)
+    var lastReportedIndex by remember(state) { mutableIntStateOf(initialVirtualIndex) }
 
     LaunchedEffect(state, values) {
         snapshotFlow {
@@ -341,25 +344,20 @@ internal fun AlarmWheel(
         }
             .distinctUntilChanged()
             .collect { centeredIndex ->
-                centeredIndex ?: return@collect
-                val valueIndex = centeredIndex.floorMod(values.size)
-                values[valueIndex].let(onSelected)
-                if (isInitial.value) {
-                    isInitial.value = false
+                if (centeredIndex == null || centeredIndex == lastReportedIndex) return@collect
+                lastReportedIndex = centeredIndex
+                selectCurrent(values[centeredIndex.floorMod(values.size)])
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                 } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                    } else {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    }
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 }
             }
     }
 
     /*
-     * If the selected value changes externally (for example when AM/PM is changed), gently move
-     * the current wheel to the nearest occurrence of that value rather than jumping hundreds of
-     * rows. During an active fling the wheel itself is the source of truth, so we leave it alone.
+     * Direct time entry sets both wheels in one step. A programmatic scroll that passes through
+     * intermediate values can feed those values back into the editor and override the typed time.
      */
     LaunchedEffect(selected) {
         if (state.isScrollInProgress) return@LaunchedEffect
@@ -383,7 +381,8 @@ internal fun AlarmWheel(
         if (delta < -size / 2) delta += size
 
         if (delta != 0) {
-            state.animateScrollToItem(centeredIndex + delta)
+            lastReportedIndex = centeredIndex + delta
+            state.scrollToItem(lastReportedIndex)
         }
     }
 
@@ -415,7 +414,9 @@ internal fun AlarmWheel(
                 key = { it },
             ) { virtualIndex ->
                 val value = values[virtualIndex.floorMod(values.size)]
-                val centered = virtualIndex == state.firstVisibleItemIndex
+                val centered by remember(state, virtualIndex) {
+                    derivedStateOf { virtualIndex == state.firstVisibleItemIndex }
+                }
 
                 Box(
                     modifier = Modifier
@@ -588,6 +589,7 @@ private fun AlarmOptionsCard(
     vibrate: Boolean,
     onSoundClick: () -> Unit,
     onVibrateChange: (Boolean) -> Unit,
+    scheduling: @Composable () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -596,34 +598,8 @@ private fun AlarmOptionsCard(
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .25f), AlarmCardShape),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .elasticClickable(onClick = onSoundClick)
-                .padding(start = 16.dp, end = 16.dp, top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OptionIconBubble(Icons.Outlined.MusicNote)
-            Spacer(Modifier.width(12.dp))
-            Text("Sound", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                soundLabel,
-                modifier = Modifier.weight(1f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .30f),
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        AlarmOptionRow("Sound", Icons.Outlined.MusicNote, soundLabel, onSoundClick)
+        AlarmOptionDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -646,6 +622,37 @@ private fun AlarmOptionsCard(
                 ),
             )
         }
+        scheduling()
+    }
+}
+
+@Composable
+internal fun AlarmOptionDivider() {
+    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .30f))
+}
+
+@Composable
+internal fun AlarmOptionRow(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().elasticClickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OptionIconBubble(icon)
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        if (value != null) Text(value, Modifier.weight(1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

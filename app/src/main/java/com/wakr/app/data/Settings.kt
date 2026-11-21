@@ -26,6 +26,8 @@ data class AlarmSettings(
     val snoozeMinutes: Int = 10,
     val cards24Hour: Boolean = false,
     val weekStart: WeekStart = WeekStart.SYSTEM,
+    val listLayout: Boolean = false,
+    val defaultMissedAlarmRepeats: Int = 0,
 )
 
 data class WorldClockSettings(

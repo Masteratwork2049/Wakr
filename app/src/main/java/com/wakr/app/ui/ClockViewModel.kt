@@ -366,5 +366,6 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         time = LocalTime.of(7, 0),
         label = "",
         days = emptySet<DayOfWeek>(),
+        wake = com.wakr.app.core.WakeOptions(repeatMissedCount = settings.value.alarms.defaultMissedAlarmRepeats),
     )
 }

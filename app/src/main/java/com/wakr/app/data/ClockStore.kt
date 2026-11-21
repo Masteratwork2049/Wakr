@@ -253,6 +253,8 @@ internal fun Preferences.toSettings() = ClockSettings(
         silenceAfterMinutes = this[intPreferencesKey("silenceAfter")] ?: 10,
         snoozeMinutes = this[intPreferencesKey("snooze")] ?: 10,
         cards24Hour = this[booleanPreferencesKey("alarmCards24Hour")] ?: false,
+        listLayout = this[booleanPreferencesKey("alarmListLayout")] ?: false,
+        defaultMissedAlarmRepeats = this[intPreferencesKey("defaultMissedAlarmRepeats")] ?: 0,
         weekStart = enumOr(this[stringPreferencesKey("weekStart")], WeekStart.SYSTEM),
     ),
     world = WorldClockSettings(
@@ -298,6 +300,8 @@ internal fun Preferences.toSettings() = ClockSettings(
 
 internal fun androidx.datastore.preferences.core.MutablePreferences.writeSettings(s: ClockSettings) {
     this[booleanPreferencesKey("alarmCards24Hour")] = s.alarms.cards24Hour
+    this[booleanPreferencesKey("alarmListLayout")] = s.alarms.listLayout
+    this[intPreferencesKey("defaultMissedAlarmRepeats")] = s.alarms.defaultMissedAlarmRepeats
     this[intPreferencesKey("silenceAfter")] = s.alarms.silenceAfterMinutes
     this[intPreferencesKey("snooze")] = s.alarms.snoozeMinutes
     this[stringPreferencesKey("weekStart")] = s.alarms.weekStart.name

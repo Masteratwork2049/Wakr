@@ -1,6 +1,5 @@
 package com.wakr.app.ui.screens
 
-import android.graphics.Paint
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -41,13 +40,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
-import android.graphics.RenderEffect
-import android.graphics.Shader
 import android.os.Build
 import android.text.format.DateFormat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -67,7 +64,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import android.view.HapticFeedbackConstants
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.size
@@ -88,14 +84,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalView
@@ -232,7 +223,7 @@ fun AlarmsScreen(
     onEdit: (Alarm) -> Unit,
     contentPadding: PaddingValues,
     onAddAlarm: (() -> Unit)? = null,
-    onPauseAll: () -> Unit = {},
+    listLayout: Boolean = false,
     onDuplicate: (Alarm) -> Unit = {},
     onSkip: (Long) -> Unit = {},
     onLock: (Alarm) -> Unit = {},
@@ -240,6 +231,7 @@ fun AlarmsScreen(
     onSelectionCountChange: ((Int) -> Unit)? = null,
     clearSelectionSignal: Int = 0,
     deleteClickSignal: Int = 0,
+    selectAllSignal: Int = 0,
     editingAlarm: Alarm? = null,
     modifier: Modifier = Modifier,
     widePane: Boolean = false,
@@ -296,8 +288,16 @@ fun AlarmsScreen(
         }
     }
 
-    LaunchedEffect(displayedAlarms) {
-        val existingIds = displayedAlarms.map { it.id }.toSet()
+    var handledSelectAll by rememberSaveable { mutableIntStateOf(selectAllSignal) }
+    LaunchedEffect(selectAllSignal) {
+        if (handledSelectAll != selectAllSignal) {
+            handledSelectAll = selectAllSignal
+            selectedIds = alarms.mapTo(mutableSetOf()) { it.id }
+        }
+    }
+
+    LaunchedEffect(alarms) {
+        val existingIds = alarms.map { it.id }.toSet()
         val validSelected = selectedIds.filter { it in existingIds }.toSet()
         if (validSelected != selectedIds) {
             selectedIds = validSelected
@@ -345,7 +345,7 @@ fun AlarmsScreen(
 
     val windowSizeInfo = LocalAppWindowSizeInfo.current
 
-    FixedEdgeBlurContainer(
+    FixedEdgeFadeContainer(
             topInset = contentPadding.calculateTopPadding(),
             bottomInset = contentPadding.calculateBottomPadding(),
             modifier = modifier,
@@ -383,7 +383,7 @@ fun AlarmsScreen(
                     BoxWithConstraints(Modifier.fillMaxSize()) {
                     val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
                     val usableWidth = maxWidth - contentPadding.calculateLeftPadding(direction) - contentPadding.calculateRightPadding(direction)
-                    val columns = if (usableWidth >= 280.dp) 2 else 1
+                    val columns = if (!listLayout && usableWidth >= 280.dp) 2 else 1
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         modifier = Modifier.fillMaxSize(),
@@ -391,9 +391,6 @@ fun AlarmsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        item(key = "next-alarm", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                            ScheduleHero(alarms, onPauseAll, { onAddAlarm?.invoke() }, onEdit)
-                        }
                         itemsIndexed(displayedAlarms, key = { _, alarm -> alarm.id }) { index, alarm ->
                             val isCardVisible = alarm.id !in exitingAlarmIds && (index < visibleCardsCount)
                             AnimatedVisibility(
@@ -426,14 +423,15 @@ fun AlarmsScreen(
                             ) {
                                 AlarmTile(
                                     alarm = alarm,
-                                    maxTileWidth = if (columns == 1) 220.dp else Dp.Infinity,
+                                    maxTileWidth = if (listLayout) 640.dp else if (columns == 1) 220.dp else Dp.Infinity,
+                                    listLayout = listLayout,
                                     order = order,
                                     selected = alarm.id in selectedIds || (widePane && editingAlarm?.id == alarm.id),
                                     inSelectionMode = inSelectionMode,
                                     onToggle = { onToggle(alarm.id) },
                                     onEdit = { onEdit(alarm) },
                                     onToggleSelect = {
-                                        if (alarm.wake.isLocked) onEdit(alarm) else selectedIds = if (alarm.id in selectedIds) {
+                                        selectedIds = if (alarm.id in selectedIds) {
                                             selectedIds - alarm.id
                                         } else {
                                             selectedIds + alarm.id
@@ -466,14 +464,23 @@ fun AlarmsScreen(
             } }, confirmButton = { androidx.compose.material3.TextButton(onClick = { actionAlarm = null }) { Text("Close") } })
     }
     if (showDeleteConfirmSheet) {
-        DeleteItemsConfirmationSheet(
-            count = selectedIds.size,
+        val deletableIds = alarms.filter { it.id in selectedIds && !it.wake.isLocked }.mapTo(mutableSetOf()) { it.id }
+        val lockedCount = alarms.count { it.id in selectedIds && it.wake.isLocked }
+        if (deletableIds.isEmpty()) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showDeleteConfirmSheet = false },
+                title = { Text("Selected alarms are locked") },
+                text = { Text("Unlock an alarm before deleting it.") },
+                confirmButton = { androidx.compose.material3.TextButton(onClick = { showDeleteConfirmSheet = false }) { Text("OK") } },
+            )
+        } else DeleteItemsConfirmationSheet(
+            count = deletableIds.size,
+            lockedCount = lockedCount,
             onDismiss = { showDeleteConfirmSheet = false },
             onConfirmDelete = {
-                val idsToDelete = selectedIds
                 selectedIds = emptySet()
                 showDeleteConfirmSheet = false
-                onDeleteAlarms?.invoke(idsToDelete)
+                onDeleteAlarms?.invoke(deletableIds)
             },
         )
     }
@@ -578,135 +585,26 @@ internal fun InlineAlarmEditorPanel(
  * Renders in parent layout above the scrolling alarm grid content.
  */
 @Composable
-fun FixedEdgeBlurContainer(
+fun FixedEdgeFadeContainer(
     topInset: Dp,
     bottomInset: Dp,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                compositingStrategy = CompositingStrategy.Offscreen
-            }
-            .drawWithContent {
-                // Step 1: Draw the base sharp scrolling alarm grid
-                drawContent()
-
-                val width = size.width
-                val height = size.height
-                val topInsetPx = topInset.toPx()
-                val bottomInsetPx = bottomInset.toPx()
-
-                // Step 2: On Android 12+, render genuine progressive hardware blur overlays
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    drawIntoCanvas { canvas ->
-                        val nativeCanvas = canvas.nativeCanvas
-
-                        val tileMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            Shader.TileMode.DECAL
-                        } else {
-                            Shader.TileMode.CLAMP
-                        }
-
-                        val blurPaint = Paint()
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            setPaintBlurEffect(blurPaint, 32f, tileMode)
-                        }
-
-                        // Fixed top edge blur overlay (from y = 0 down to Settings icon level)
-                        if (topInsetPx > 0f) {
-                            val saveCount = nativeCanvas.saveLayer(
-                                0f, 0f, width, topInsetPx, blurPaint
-                            )
-                            drawContent()
-
-                            // Organic gradient mask for top blur
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black,
-                                        Color.Black.copy(alpha = 0.70f),
-                                        Color.Transparent,
-                                    ),
-                                    startY = 0f,
-                                    endY = topInsetPx,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
-                            nativeCanvas.restoreToCount(saveCount)
-                        }
-
-                        // Fixed bottom edge blur overlay (from top edge of nav bar to bottom)
-                        val bottomStart = height - bottomInsetPx
-                        if (bottomInsetPx > 0f && bottomStart < height) {
-                            val saveCount = nativeCanvas.saveLayer(
-                                0f, bottomStart, width, height, blurPaint
-                            )
-                            drawContent()
-
-                            // Organic gradient mask for bottom blur
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.70f),
-                                        Color.Black,
-                                    ),
-                                    startY = bottomStart,
-                                    endY = height,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
-                            nativeCanvas.restoreToCount(saveCount)
-                        }
-                    }
-                }
-
-                // Step 3: Smooth organic gradient fade mask for extreme top & bottom edge dissolve
-                if (topInsetPx > 0f) {
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.85f),
-                                Color.Black,
-                            ),
-                            startY = 0f,
-                            endY = topInsetPx,
-                        ),
-                        blendMode = BlendMode.DstIn,
-                    )
-                }
-
-                val bottomStart = height - bottomInsetPx
-                if (bottomInsetPx > 0f && bottomStart < height) {
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black,
-                                Color.Black.copy(alpha = 0.85f),
-                                Color.Transparent,
-                            ),
-                            startY = bottomStart,
-                            endY = height,
-                        ),
-                        blendMode = BlendMode.DstIn,
-                    )
-                }
-            },
-    ) {
-        content()
-    }
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-private fun setPaintBlurEffect(paint: Paint, radius: Float, tileMode: Shader.TileMode) {
-    runCatching {
-        val method = paint.javaClass.getMethod("setRenderEffect", RenderEffect::class.java)
-        method.invoke(paint, RenderEffect.createBlurEffect(radius, radius, tileMode))
-    }
+    val background = MaterialTheme.colorScheme.background
+    Box(modifier.fillMaxSize().drawWithCache {
+        val top = topInset.toPx()
+        val bottom = bottomInset.toPx()
+        val topFade = Brush.verticalGradient(listOf(background, background.copy(alpha = 0f)), endY = top)
+        val bottomFade = Brush.verticalGradient(listOf(background.copy(alpha = 0f), background),
+            startY = size.height - bottom, endY = size.height)
+        onDrawWithContent {
+            drawContent()
+            if (top > 0f) drawRect(topFade, size = androidx.compose.ui.geometry.Size(size.width, top))
+            if (bottom > 0f) drawRect(bottomFade, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - bottom),
+                size = androidx.compose.ui.geometry.Size(size.width, bottom))
+        }
+    }) { content() }
 }
 
 /**
@@ -886,6 +784,7 @@ private fun AlarmTile(
     inSelectionMode: Boolean = false,
     itemModifier: Modifier = Modifier,
     maxTileWidth: Dp = Dp.Infinity,
+    listLayout: Boolean = false,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     onToggleSelect: () -> Unit = {},
@@ -948,7 +847,8 @@ private fun AlarmTile(
     BoxWithConstraints(Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = maxTileWidth)) {
     val tileWidth = maxWidth
     val inset = CONTENT_INSET_DP.dp
-    val fit = fittedTime(meridiem = meridiem, tileWidth = tileWidth, target = inset)
+    val readoutWidth = if (listLayout) tileWidth.coerceAtMost(220.dp) else tileWidth
+    val fit = fittedTime(meridiem = meridiem, tileWidth = readoutWidth, target = inset)
     val hourCap = fit.cap
     val timeToDays = hourCap * MERIDIEM_GAP_FRACTION - SWITCH_TOUCH_INSET_DP.dp - ALARM_DIGIT_BOTTOM_BLEED_DP.dp
     val tileHeight = inset * 2 + hourCap + timeToDays + SWITCH_ROW_VISIBLE_DP.dp
@@ -956,7 +856,9 @@ private fun AlarmTile(
     val badge = listOfNotNull("Temporary".takeIf { alarm.temporary }, "Locked".takeIf { alarm.wake.isLocked },
         "Paused".takeIf { alarm.pausedByGroup || (alarm.wake.pausedUntilEpochDay ?: Long.MIN_VALUE) >
             java.time.LocalDate.now(alarm.scheduleZone(java.time.ZoneId.systemDefault())).toEpochDay() }).joinToString(" · ")
-    val badgeHeight = if (badge.isEmpty()) 0.dp else with(androidx.compose.ui.platform.LocalDensity.current) { 22.sp.toDp() }
+    val textHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
+        (if (alarm.label.isBlank()) 0.sp else 24.sp).toDp() + (if (badge.isEmpty()) 0.sp else 22.sp).toDp()
+    }
     Surface(
         color = Color.Transparent,
         shape = RoundedCornerShape(24.dp),
@@ -972,7 +874,7 @@ private fun AlarmTile(
             }
             .background(animatedContainer, RoundedCornerShape(24.dp))
             .border(if (selected) 2.dp else 1.25.dp, animatedBorderColor, RoundedCornerShape(24.dp))
-            .height(tileHeight + badgeHeight)
+            .height(tileHeight + textHeight)
             .combinedClickable(
                 onClick = {
                     if (inSelectionMode) {
@@ -1005,8 +907,14 @@ private fun AlarmTile(
             },
     ) {
             Box(Modifier.fillMaxSize()) {
-                if (badge.isNotEmpty()) Text(badge, Modifier.align(Alignment.TopCenter).padding(top = 4.dp),
-                    color = animatedInk, style = MaterialTheme.typography.labelMedium)
+                Column(Modifier.align(Alignment.TopCenter).padding(start = 38.dp, end = 38.dp, top = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (alarm.label.isNotBlank()) Text(alarm.label,
+                        color = animatedInk, style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    if (badge.isNotEmpty()) Text(badge, color = animatedInk, style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
                 if (selected) {
                     Box(
                         modifier = Modifier
@@ -1028,14 +936,14 @@ private fun AlarmTile(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = inset + badgeHeight, bottom = inset - SWITCH_TOUCH_INSET_DP.dp),
+                        .padding(top = inset + textHeight, bottom = inset - SWITCH_TOUCH_INSET_DP.dp),
                     verticalArrangement = Arrangement.spacedBy(timeToDays),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     AlarmTimeReadout(
                         time = alarm.time, use24h = use24h, capHeight = hourCap,
                         ink = animatedInk, weight = animatedWeight,
-                        modifier = Modifier.fillMaxWidth().padding(start = fit.padStart, end = fit.padEnd),
+                        modifier = Modifier.width(readoutWidth).padding(start = fit.padStart, end = fit.padEnd),
                     )
 
                     Row(
@@ -1082,6 +990,7 @@ fun SelectionToolbar(
     onClearSelection: () -> Unit,
     onDeleteClick: () -> Unit,
     deleteDescription: String = "Delete selected alarms",
+    onSelectAll: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -1104,9 +1013,14 @@ fun SelectionToolbar(
 
         Text(
             "$selectedCount selected",
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
+
+        if (onSelectAll != null) androidx.compose.material3.TextButton(onClick = onSelectAll) { Text("Select all") }
 
         IconButton(onClick = onDeleteClick) {
             Icon(
@@ -1125,6 +1039,7 @@ internal fun DeleteItemsConfirmationSheet(
     onDismiss: () -> Unit,
     onConfirmDelete: () -> Unit,
     itemName: String = "alarm",
+    lockedCount: Int = 0,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -1180,6 +1095,12 @@ internal fun DeleteItemsConfirmationSheet(
 
             Text(
                 "This can't be undone.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (lockedCount > 0) Text(
+                if (lockedCount == 1) "1 locked alarm will be kept." else "$lockedCount locked alarms will be kept.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

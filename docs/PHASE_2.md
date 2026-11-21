@@ -1,6 +1,6 @@
 # Phase 2 · Alarm engine and scheduling
 
-Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, and the ringing flow. Add the Next Alarm card, low-battery feedback, Pause all, the Alarm in… picker, and typed time entry. Add scheduling, pause-until, time zone, flash, missed-alarm repeats, lock, and duplication to the existing Edit alarm sheet.
+Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, and the ringing flow. Keep the Next alarm card, low-battery feedback, and Pause all on Morning. Add the Alarm in… picker, and typed time entry. Add scheduling, pause-until, time zone, flash, missed-alarm repeats, lock, and duplication to the existing Edit alarm sheet.
 
 ## Temporary alarms
 
@@ -8,6 +8,13 @@ Upgrade alarm scheduling, time and time-zone change handling, reboot recovery, a
 - Show a **Temporary** badge on the Alarms tab whenever the switch is on. Use the existing alarm-card typography and theme colors, keep the time and label readable, and include the badge in the card’s accessibility description.
 - Keep the alarm and badge visible while it is scheduled, ringing, or snoozed. After final dismissal from the ringing screen or notification, remove the alarm and cancel its pending callbacks. Skipping an occurrence and manually turning an alarm off do not count as dismissal.
 - Verify that repeated delivery of a dismissal action cannot delete another alarm, and that dismissal after snoozing removes a temporary alarm only once.
+
+## Alarm editor, layouts, and defaults
+
+- Show **Type time**, **Alarm in…** for new alarms, and the scheduling controls inline with Sound and Vibration in the editor. Make the full width of the **Silence after** and **Repeat missed alarm** pickers swipeable.
+- Place a **Duplicate alarm** pill beneath the alarm name field. Require pressing and holding **Unlock** before editing a locked alarm.
+- Show saved names on alarm cards above status tags. Offer persistent **Grid** and **List** layouts on Alarms and in Settings. Add **Select all** to the alarm selection toolbar. Keep locked alarms protected in bulk deletion.
+- Show the existing default silence duration and a new default for missed-alarm repeats in Alarm Settings. New alarms start with the chosen retry count and use the app silence duration unless overridden.
 
 ## Design and motion across the app
 

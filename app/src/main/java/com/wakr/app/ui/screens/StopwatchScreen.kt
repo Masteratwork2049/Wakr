@@ -216,7 +216,7 @@ fun StopwatchScreen(
     val availableFace = (maxHeight - contentPadding.calculateTopPadding() -
         contentPadding.calculateBottomPadding() - 228.dp).coerceAtLeast(120.dp)
     val compactFace = maxWidth < 360.dp || density.fontScale > 1f
-    FixedEdgeBlurContainer(
+    FixedEdgeFadeContainer(
         topInset = contentPadding.calculateTopPadding(),
         bottomInset = contentPadding.calculateBottomPadding(),
         modifier = modifier.fillMaxSize(),

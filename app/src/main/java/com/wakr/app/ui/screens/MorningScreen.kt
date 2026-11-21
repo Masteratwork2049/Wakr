@@ -53,7 +53,7 @@ import java.util.Locale
 @Composable
 internal fun MorningScreen(
     alarms: List<Alarm>, history: List<WakeUpLog>, padding: PaddingValues, use24h: Boolean,
-    selected: Boolean, onAdd: () -> Unit, onEdit: (Alarm) -> Unit,
+    selected: Boolean, onAdd: () -> Unit, onEdit: (Alarm) -> Unit, onPauseAll: () -> Unit,
 ) {
     val millis by rememberWallTicker(periodMillis = 60_000L)
     val zone = ZoneId.systemDefault()
@@ -79,7 +79,9 @@ internal fun MorningScreen(
                 Text("Morning", color = colors.onSurface, style = MaterialTheme.typography.headlineLarge)
             }
             item {
-                NextAlarmCard(schedule.next, clock, calendar, use24h, selected, onAdd, onEdit)
+                NextAlarmCard(schedule.next, clock, calendar, use24h, selected, onAdd, onEdit) {
+                    NextAlarmDetails(schedule.next, now, alarms, onPauseAll)
+                }
             }
             item {
                 Text("Next seven days", Modifier.padding(top = 12.dp), color = colors.onSurface,
@@ -136,7 +138,6 @@ internal fun NextAlarmCard(
     val enter = remember { Animatable(0f) }
     LaunchedEffect(selected) {
         if (selected) enter.animateTo(1f, spring(dampingRatio = .72f, stiffness = 400f))
-        else enter.snapTo(0f)
     }
     Column(Modifier.fillMaxWidth().graphicsLayer {
         scaleX = .94f + .06f * enter.value

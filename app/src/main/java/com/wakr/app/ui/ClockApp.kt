@@ -1,5 +1,8 @@
 package com.wakr.app.ui
 
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.clip
+
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
@@ -176,14 +179,11 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
             if (alarm.wake.isLocked) lockedAlarm = alarm else editing = alarm
         }
         lockedAlarm?.let { alarm ->
-            androidx.compose.material3.AlertDialog(onDismissRequest = { lockedAlarm = null },
-                title = { Text("Unlock alarm?") }, text = { Text(alarm.label.ifBlank { "Unlock to make changes." }) },
-                confirmButton = { androidx.compose.material3.TextButton(onClick = {
-                    vm.setAlarmLock(alarm.id, false)
-                    editing = alarm.copy(wake = alarm.wake.copy(isLocked = false))
-                    lockedAlarm = null
-                }) { Text("Unlock") } },
-                dismissButton = { androidx.compose.material3.TextButton(onClick = { lockedAlarm = null }) { Text("Cancel") } })
+            UnlockAlarmDialog(alarm.label, onDismiss = { lockedAlarm = null }) {
+                vm.setAlarmLock(alarm.id, false)
+                editing = alarm.copy(wake = alarm.wake.copy(isLocked = false))
+                lockedAlarm = null
+            }
         }
         var relativePicker by remember { mutableStateOf(false) }
         var showNewAlarmPicker by remember { mutableStateOf(false) }
@@ -191,6 +191,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         var selectedWorldCityZoneId by rememberSaveable { mutableStateOf<String?>(null) }
         var alarmSelectionCount by remember { mutableIntStateOf(0) }
         var clearSelectionSignal by remember { mutableIntStateOf(0) }
+        var selectAllSignal by remember { mutableIntStateOf(0) }
         var deleteClickSignal by remember { mutableIntStateOf(0) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         val settingsProgress = remember { Animatable(0f) }
@@ -319,6 +320,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                 if (activeTab == Tab.WORLD) worldPresentation.deletionConfirmation.value = true
                                 else deleteClickSignal++
                             },
+                            onSelectAll = if (activeTab == Tab.ALARMS) ({ selectAllSignal++ }) else null,
                             deleteDescription = if (activeTab == Tab.WORLD) "Delete selected locations" else "Delete selected alarms",
                         )
                     }
@@ -326,6 +328,13 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                     TopAppBar(
                         title = {},
                         actions = {
+                            if (activeTab == Tab.ALARMS) {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    vm.updateSettings { it.copy(alarms = it.alarms.copy(listLayout = !it.alarms.listLayout)) }
+                                }) {
+                                    Text(if (settings.alarms.listLayout) "Grid view" else "List view")
+                                }
+                            }
                             IconButton(onClick = ::openSettings) {
                                 Icon(
                                     Icons.Outlined.Settings,
@@ -399,7 +408,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                 AlarmsScreen(alarms = alarms, weekStart = settings.alarms.weekStart,
                                     staggerEntranceToken = isPostOnboardingStaggerToken,
                                     onStaggerConsumed = { isPostOnboardingStaggerToken = 0 },
-                                    onPauseAll = { vm.pauseOrResumeAll() },
+                                    listLayout = settings.alarms.listLayout,
+                                    selectAllSignal = selectAllSignal,
                                     onDuplicate = { saveWithConfirmation(it.copy(id = 0, enabled = true, pausedByGroup = false)) },
                                     onSkip = { vm.skipNext(it) }, onLock = { vm.setAlarmLock(it.id, true) },
                                     onToggle = { id -> alarms.find { it.id == id }?.let {
@@ -479,7 +489,8 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                         val alarms by vm.alarms.collectAsStateWithLifecycle()
                         val history by vm.wakeHistory.collectAsStateWithLifecycle(initialValue = emptyList())
                         MorningScreen(alarms, history, body, settings.alarms.cards24Hour,
-                            selected = pagerState.currentPage == Tab.MORNING.ordinal,
+                            selected = pagerState.settledPage == Tab.MORNING.ordinal,
+                            onPauseAll = { vm.pauseOrResumeAll() },
                             onAdd = { showNewAlarmPicker = true },
                             onEdit = { alarm ->
                                 if (wideClockPages) tab = Tab.ALARMS
@@ -600,4 +611,32 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         }
         }
     }
+}
+
+
+@Composable
+internal fun UnlockAlarmDialog(label: String, onDismiss: () -> Unit, onUnlock: () -> Unit) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Unlock alarm?") },
+        text = { Text(if (label.isBlank()) "Press and hold Unlock to make changes."
+            else "Press and hold Unlock to make changes to $label.") },
+        confirmButton = {
+            val shape = androidx.compose.foundation.shape.CircleShape
+            androidx.compose.material3.Surface(shape = shape, color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary) {
+                Text("Unlock", Modifier.clip(shape).combinedClickable(
+                    role = androidx.compose.ui.semantics.Role.Button,
+                    onClick = {},
+                    onLongClickLabel = "Unlock alarm",
+                    onLongClick = {
+                        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                        onUnlock()
+                    },
+                ).padding(horizontal = 24.dp, vertical = 14.dp))
+            }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

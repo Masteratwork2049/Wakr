@@ -1,5 +1,7 @@
 package com.wakr.app.ui.screens
 
+import com.wakr.app.ui.sheets.missedAlarmCountLabel
+
 import com.wakr.app.data.IslandProfile
 import com.wakr.app.data.IslandCalibration
 import com.wakr.app.data.calibration
@@ -299,10 +301,24 @@ fun SettingsScreen(
                 )
                 SettingsDivider()
                 SettingsNavigateRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = "Alarm layout",
+                    subtitle = if (settings.alarms.listLayout) "List" else "Grid",
+                    onClick = { picker = SettingsPicker.ALARM_LAYOUT },
+                )
+                SettingsDivider()
+                SettingsNavigateRow(
                     icon = Icons.Outlined.NotificationsNone,
-                    title = "Silence after",
+                    title = "Default silence after",
                     subtitle = minutesLabel(settings.alarms.silenceAfterMinutes),
                     onClick = { picker = SettingsPicker.SILENCE },
+                )
+                SettingsDivider()
+                SettingsNavigateRow(
+                    icon = Icons.Outlined.NotificationsNone,
+                    title = "Default missed-alarm repeats",
+                    subtitle = missedAlarmCountLabel(settings.alarms.defaultMissedAlarmRepeats),
+                    onClick = { picker = SettingsPicker.MISSED_ALARMS },
                 )
                 SettingsDivider()
                 SettingsNavigateRow(
@@ -471,8 +487,30 @@ fun SettingsScreen(
                     picker = null
                 },
             )
+            SettingsPicker.ALARM_LAYOUT -> ChoicePickerDialog(
+                title = "Alarm layout",
+                value = settings.alarms.listLayout,
+                options = listOf(false, true),
+                label = { if (it) "List" else "Grid" },
+                onDismiss = { picker = null },
+                onSelect = { value ->
+                    onChange { it.copy(alarms = it.alarms.copy(listLayout = value)) }
+                    picker = null
+                },
+            )
+            SettingsPicker.MISSED_ALARMS -> ChoicePickerDialog(
+                title = "Default missed-alarm repeats",
+                value = settings.alarms.defaultMissedAlarmRepeats,
+                options = listOf(0, 1, 2, 3, 4, 5, -1),
+                label = ::missedAlarmCountLabel,
+                onDismiss = { picker = null },
+                onSelect = { value ->
+                    onChange { it.copy(alarms = it.alarms.copy(defaultMissedAlarmRepeats = value)) }
+                    picker = null
+                },
+            )
             SettingsPicker.SILENCE -> ChoicePickerDialog(
-                title = "Silence after",
+                title = "Default silence after",
                 value = settings.alarms.silenceAfterMinutes,
                 options = listOf(1, 5, 10, 15, 20, 25, 30, 0),
                 label = ::minutesLabel,
@@ -1151,7 +1189,7 @@ private fun OverlayCalibrationDialog(
     }
 }
 
-private enum class SettingsPicker { ALARM_CARD_FORMAT, THEME, SILENCE, SNOOZE, WEEK_START, PRIVACY, PRESETS, STARTUP_PAGE }
+private enum class SettingsPicker { ALARM_CARD_FORMAT, ALARM_LAYOUT, MISSED_ALARMS, THEME, SILENCE, SNOOZE, WEEK_START, PRIVACY, PRESETS, STARTUP_PAGE }
 
 @Composable
 private fun DefaultStartupPageDialog(
