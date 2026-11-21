@@ -251,10 +251,10 @@ fun AlarmsScreen(
         if (staggerEntranceToken > 0) {
             // Brief 120ms settling pause after page slide transition completes
             delay(120L)
-            Log.d("DynamicIslandOverlay", "SETUP INITIAL ALARM STAGGER START count=${alarms.size}")
+            Log.d("AlarmStagger", "SETUP INITIAL ALARM STAGGER START count=${alarms.size}")
             for (i in 1..alarms.size) {
                 visibleCardsCount = i
-                Log.d("DynamicIslandOverlay", "SETUP INITIAL ALARM ITEM index=${i - 1}")
+                Log.d("AlarmStagger", "SETUP INITIAL ALARM ITEM index=${i - 1}")
                 if (i < alarms.size) {
                     delay(70L)
                 }
@@ -461,18 +461,9 @@ fun AlarmsScreen(
         }
 
     if (showDeleteConfirmSheet) {
-        val deletableIds = alarms.filter { it.id in selectedIds && !it.wake.isLocked }.mapTo(mutableSetOf()) { it.id }
-        val lockedCount = alarms.count { it.id in selectedIds && it.wake.isLocked }
-        if (deletableIds.isEmpty()) {
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { showDeleteConfirmSheet = false },
-                title = { Text("Selected alarms are locked") },
-                text = { Text("Unlock an alarm before deleting it.") },
-                confirmButton = { androidx.compose.material3.TextButton(onClick = { showDeleteConfirmSheet = false }) { Text("OK") } },
-            )
-        } else DeleteItemsConfirmationSheet(
+        val deletableIds = alarms.filter { it.id in selectedIds }.mapTo(mutableSetOf()) { it.id }
+        DeleteItemsConfirmationSheet(
             count = deletableIds.size,
-            lockedCount = lockedCount,
             onDismiss = { showDeleteConfirmSheet = false },
             onConfirmDelete = {
                 selectedIds = emptySet()
@@ -754,7 +745,7 @@ private fun AlarmTile(
     val timeToDays = hourCap * MERIDIEM_GAP_FRACTION - SWITCH_TOUCH_INSET_DP.dp - ALARM_DIGIT_BOTTOM_BLEED_DP.dp
     val tileHeight = inset * 2 + hourCap + timeToDays + SWITCH_ROW_VISIBLE_DP.dp
 
-    val badge = listOfNotNull("Temporary".takeIf { alarm.temporary }, "Locked".takeIf { alarm.wake.isLocked },
+    val badge = listOfNotNull("Temporary".takeIf { alarm.temporary },
         "Paused".takeIf { alarm.pausedByGroup || (alarm.wake.pausedUntilEpochDay ?: Long.MIN_VALUE) >
             java.time.LocalDate.now(alarm.scheduleZone(java.time.ZoneId.systemDefault())).toEpochDay() }).joinToString(" · ")
     val textHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
@@ -1051,7 +1042,6 @@ internal fun DeleteItemsConfirmationSheet(
     onDismiss: () -> Unit,
     onConfirmDelete: () -> Unit,
     itemName: String = "alarm",
-    lockedCount: Int = 0,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -1111,11 +1101,7 @@ internal fun DeleteItemsConfirmationSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (lockedCount > 0) Text(
-                if (lockedCount == 1) "1 locked alarm will be kept." else "$lockedCount locked alarms will be kept.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+
 
             Spacer(Modifier.height(28.dp))
 

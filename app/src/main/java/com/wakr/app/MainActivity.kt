@@ -10,7 +10,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.wakr.app.alarm.Notifications
-import com.wakr.app.overlay.OverlayManager
 import com.wakr.app.ui.ClockApp
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +27,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        val foldable = com.wakr.app.overlay.IslandDisplayMonitor.state.value.foldable
+        val foldable = packageManager.hasSystemFeature("android.hardware.sensor.hinge_angle") ||
+            packageManager.hasSystemFeature("android.hardware.type.foldable") ||
+            getSystemService(android.hardware.SensorManager::class.java)?.getDefaultSensor(
+                android.hardware.Sensor.TYPE_HINGE_ANGLE,
+            ) != null
         if (lockSlabPortrait(foldable, resources.configuration.smallestScreenWidthDp)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
@@ -37,11 +40,6 @@ class MainActivity : ComponentActivity() {
         // Edge-to-edge is enabled inside ClockTheme, where the effective dark/light state is known
         // and the system-bar icon contrast can be set to match it.
         setContent { ClockApp(startTab = startTab, startRequestId = navigationRequestId) }
-    }
-
-    override fun onPostResume() {
-        super.onPostResume()
-        OverlayManager.onClockActivityForegrounded()
     }
 
     override fun onNewIntent(intent: Intent) {

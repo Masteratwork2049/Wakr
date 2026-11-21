@@ -55,10 +55,6 @@ fun formatPresetLabel(seconds: Int): String = when {
     else -> "${seconds}s"
 }
 
-const val FACTORY_OVERLAY_OFFSET_X = 0
-const val FACTORY_OVERLAY_OFFSET_Y = 9
-const val FACTORY_OVERLAY_WIDTH_OFFSET = -43
-const val FACTORY_OVERLAY_HEIGHT_OFFSET = 1
 
 data class ThemeSettings(
     /**
@@ -70,12 +66,6 @@ data class ThemeSettings(
     val palette: Palette = Palette.CONCEPT,
     val darkMode: DarkMode = DarkMode.SYSTEM,
     val amoledBlack: Boolean = false,
-    val dynamicIsland: Boolean = false,
-    val overlayProfiles: Map<IslandProfile, IslandCalibration> = emptyMap(),
-    val overlayOffsetX: Int = FACTORY_OVERLAY_OFFSET_X,
-    val overlayOffsetY: Int = FACTORY_OVERLAY_OFFSET_Y,
-    val overlayWidthOffset: Int = FACTORY_OVERLAY_WIDTH_OFFSET,
-    val overlayHeightOffset: Int = FACTORY_OVERLAY_HEIGHT_OFFSET,
 )
 
 enum class DarkMode(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }

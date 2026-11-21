@@ -110,7 +110,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.wakr.app.core.needsMissions
 import com.wakr.app.ui.elasticClickable
 import com.wakr.app.ui.glass
 import com.wakr.app.ui.theme.ClockFace
@@ -173,7 +172,6 @@ fun AlarmPickerSheetContent(
     missions: List<com.wakr.app.core.AlarmMission> = emptyList(),
     onMissions: (List<com.wakr.app.core.AlarmMission>) -> Unit = {},
 ) {
-    val canSave = !wake.needsMissions || missions.isNotEmpty()
     val locale = LocalConfiguration.current.locales[0]
     val density = LocalDensity.current
     // Material's modal content insets already include the animated IME. Subtract that
@@ -200,7 +198,7 @@ fun AlarmPickerSheetContent(
                 IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
                 Text(title, Modifier.weight(1f).padding(end = 6.dp), style = MaterialTheme.typography.titleLargeEmphasized)
                 if (showDelete) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete alarm") }
-                SheetHeaderButton("Save", primary = true, onClick = { onSave(false) }, enabled = canSave, icon = Icons.Rounded.Check)
+                SheetHeaderButton("Save", primary = true, onClick = { onSave(false) }, icon = Icons.Rounded.Check)
             }
             if (confirmDelete) AlertDialog(
                 onDismissRequest = { confirmDelete = false }, title = { Text("Delete alarm?") },
@@ -240,14 +238,12 @@ fun AlarmPickerSheetContent(
                 text = "Save",
                 primary = true,
                 onClick = { onSave(false) },
-                enabled = canSave,
                 icon = Icons.Rounded.Check,
             )
         }
 
         }
-        if (!canSave) Text("Add a wake-up mission or turn off Require wake-up missions in Difficulty.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+
         CompositionLocalProvider(LocalBringIntoViewSpec provides AlarmNameBringIntoViewSpec) {
         val bodyScroll = rememberScrollState()
         Column(Modifier.weight(1f, fill = false)
@@ -261,7 +257,7 @@ fun AlarmPickerSheetContent(
                 Spacer(Modifier.height(8.dp))
                 SheetHeaderButton("Duplicate alarm", primary = false, onClick = { onSave(true) },
                     icon = Icons.Outlined.ContentCopy, modifier = Modifier.fillMaxWidth(),
-                    arrangement = Arrangement.Start, enabled = canSave)
+                    arrangement = Arrangement.Start)
             }
         }
         if (fullscreen) {

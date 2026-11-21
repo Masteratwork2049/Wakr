@@ -21,7 +21,7 @@ internal object WakeMigration : DataMigration<Preferences> {
             if (records != null) {
                 for (i in 0 until records.length()) {
                     val alarm = records.optJSONObject(i) ?: continue
-                    if (!alarm.has("wake")) alarm.put("wake", WakeOptions().toJson())
+                    if (!alarm.has("wake")) alarm.put("wake", WakeOptions(maxSnoozes = null).toJson())
                 }
                 next[alarms] = records.toString()
             }

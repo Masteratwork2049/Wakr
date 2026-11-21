@@ -43,7 +43,7 @@ class WakeStoreTest {
     private val legacy = """[{"id":81,"time":23400,"days":[1,5],"label":"Early shift","enabled":false,"vibrate":false,"sound":"content://tone/81","snoozed":1234,"skippedOccurrence":321,"skippedDate":"2026-09-17"}]"""
     private val original = Alarm(81, LocalTime.of(6, 30), "Early shift",
         setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), false, false, "content://tone/81",
-        1234, 321, LocalDate.parse("2026-09-17"))
+        1234, 321, LocalDate.parse("2026-09-17"), wake = WakeOptions(maxSnoozes = null))
 
     @Test fun vanillaFileUpgradesOnceAndRetainsOtherSettings() = runBlocking {
         open(emptyList()) { prefs ->
@@ -78,9 +78,13 @@ class WakeStoreTest {
         open(listOf(WakeMigration)) { assertTrue(ClockStore(it).alarmsNow().isEmpty()) }
     }
 
-    @Test fun missionRequirementPreservesBothExplicitStatesAndLegacyDefault() {
-        for (requirement in listOf(null, false, true)) {
-            val options = WakeOptions(difficulty = AlarmDifficulty.NORMAL, requireMissions = requirement)
+    @Test fun snoozeLimitsPreserveLegacyBehaviorAndRoundTrip() {
+        assertEquals(0, org.json.JSONObject("""{"snoozeEnabled":false,"maxSnoozes":3}""").toWakeOptions().maxSnoozes)
+        assertEquals(3, org.json.JSONObject("""{"snoozeEnabled":true,"maxSnoozes":3}""").toWakeOptions().maxSnoozes)
+        assertNull(org.json.JSONObject("""{"snoozeEnabled":true}""").toWakeOptions().maxSnoozes)
+        assertEquals(0, WakeOptions().maxSnoozes)
+        for (limit in listOf(0, 3, null)) {
+            val options = WakeOptions(maxSnoozes = limit, stillAwakeChecksCount = 6, lockBeforeRingMin = 180)
             assertEquals(options, options.toJson().toWakeOptions())
         }
     }
@@ -95,12 +99,12 @@ class WakeStoreTest {
         }
         val options = WakeOptions(
             scheduledDateEpochDay = 21_000, pausedUntilEpochDay = 20_009, timeZoneId = "Asia/Kolkata",
-            isLocked = true, difficulty = AlarmDifficulty.CUSTOM, soundMode = AlarmSoundMode.LOCAL_MUSIC,
+            soundMode = AlarmSoundMode.LOCAL_MUSIC,
             musicUris = listOf("content://tracks/1", "content://tracks/2"), volumePercent = 80,
             fadeInSeconds = 90, vibrationPattern = VibrationPattern.HEARTBEAT, flashEnabled = true,
-            voiceAnnounceEnabled = true, snoozeEnabled = false, snoozeDurationMin = 4, maxSnoozes = 2,
+            voiceAnnounceEnabled = true, snoozeDurationMin = 4, maxSnoozes = 2,
             shakeToSnooze = true, silenceAfterMin = 0, repeatMissedCount = -1, reRingIntervalMin = 3,
-            deleteAfterDismiss = true, lockBeforeRingMin = 15, relaunchOnLeave = true, rebootSurvivalMax = 2,
+            deleteAfterDismiss = true, lockBeforeRingMin = 15, rebootSurvivalMax = 2,
             stillAwakeChecksCount = 2, stillAwakeDelayMin = 8,
         )
         val alarm = original.copy(wake = options, missions = missions, createdAt = 1500)

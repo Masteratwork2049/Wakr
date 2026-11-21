@@ -7,25 +7,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhaseThreeAlarmTest {
-    private val normal = WakeOptions().withDifficulty(AlarmDifficulty.NORMAL)
-    private val hard = WakeOptions().withDifficulty(AlarmDifficulty.HARD)
     private val at = 40_000L
-    private val ring = Alarm(7L, LocalTime.NOON, ringingAt = at, wake = normal,
+    private val ring = Alarm(7L, LocalTime.NOON, ringingAt = at, wake = WakeOptions(maxSnoozes = 3),
         missions = listOf(AlarmMission(1, MissionType.MATH), AlarmMission(2, MissionType.TYPING)))
 
-    @Test fun presetsSetTheirLimits() {
-        assertEquals(3, normal.maxSnoozes)
-        assertEquals(0, normal.silenceAfterMin)
-        assertFalse(hard.snoozeEnabled)
-        assertEquals(1, hard.stillAwakeChecksCount)
-        val strict = hard.withDifficulty(AlarmDifficulty.NO_MERCY)
-        assertEquals(2, strict.stillAwakeChecksCount)
-        assertEquals(60, strict.lockBeforeRingMin)
-        assertEquals(5, strict.rebootSurvivalMax)
-        val easy = strict.withDifficulty(AlarmDifficulty.EASY)
-        assertTrue(easy.snoozeEnabled)
-        assertNull(easy.maxSnoozes)
-        assertEquals(0, easy.lockBeforeRingMin)
+    @Test fun newAlarmsCannotSnoozeUntilALimitIsSelected() {
+        val alarm = Alarm(10, LocalTime.NOON, ringingAt = at)
+        assertFalse(alarm.canSnooze())
+        assertSame(alarm, alarm.finishUserOccurrence(alarm.id, at, at + 60_000))
+        assertTrue(alarm.copy(wake = WakeOptions(maxSnoozes = null), snoozeCount = 50).canSnooze())
     }
 
     @Test fun alarmCannotDismissBeforeAllMissionsIncludingBeforeFirstUnlock() {
@@ -38,23 +28,9 @@ class PhaseThreeAlarmTest {
         assertNull(complete.finishUserOccurrence(7, at, null)!!.ringingAt)
     }
 
-    @Test fun missionRequirementIsIndependentOfOtherDifficultySettings() {
-        val optional = ring.copy(wake = hard.copy(requireMissions = false))
-        assertFalse(optional.wake.needsMissions)
-        assertFalse(optional.canSnooze())
-        assertNull(optional.finishUserOccurrence(7, at, null)!!.ringingAt)
-
-        val required = ring.copy(wake = WakeOptions(requireMissions = true))
-        assertTrue(required.wake.needsMissions)
-        assertTrue(required.canSnooze())
-        assertSame(required, required.finishUserOccurrence(7, at, null))
-    }
-
-    @Test fun legacyCustomAlarmsOnlyRunMissionsWhenConfigured() {
-        val legacy = ring.copy(wake = WakeOptions(difficulty = AlarmDifficulty.CUSTOM))
-        assertFalse(legacy.wake.needsMissions)
-        assertSame(legacy, legacy.finishUserOccurrence(7, at, null))
-        val withoutMissions = legacy.copy(missions = emptyList())
+    @Test fun aConfiguredMissionRequiresCompletionAndAnEmptyAlarmDismissesDirectly() {
+        assertSame(ring, ring.finishUserOccurrence(7, at, null))
+        val withoutMissions = ring.copy(missions = emptyList())
         assertNull(withoutMissions.finishUserOccurrence(7, at, null)!!.ringingAt)
     }
 
@@ -88,8 +64,8 @@ class PhaseThreeAlarmTest {
         assertEquals(1, paused.missionIndex)
         val exhausted = paused.copy(ringingAt = at)
         assertSame(exhausted, exhausted.finishUserOccurrence(7, at, at + 60_000))
-        val hardRing = ring.copy(wake = hard)
-        assertSame(hardRing, hardRing.finishUserOccurrence(7, at, at + 60_000))
+        val noSnooze = ring.copy(wake = WakeOptions())
+        assertSame(noSnooze, noSnooze.finishUserOccurrence(7, at, at + 60_000))
     }
 
     @Test fun preRingWindowStartsAtBoundary() {
@@ -97,6 +73,12 @@ class PhaseThreeAlarmTest {
         assertFalse(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T06:29:59Z")))
         assertTrue(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T06:30:00Z")))
         assertFalse(alarm.copy(enabled = false).isPreRingProtected(ZonedDateTime.parse("2026-11-21T06:30:00Z")))
+    }
+
+    @Test fun preRingProtectionSupportsWholeHours() {
+        val alarm = Alarm(12, LocalTime.of(7, 0), wake = WakeOptions(lockBeforeRingMin = 3 * 60))
+        assertFalse(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T03:59:59Z")))
+        assertTrue(alarm.isPreRingProtected(ZonedDateTime.parse("2026-11-21T04:00:00Z")))
     }
 
     @Test fun typingAllowsEditsAndRejectsMultipleInsertedCharacters() {

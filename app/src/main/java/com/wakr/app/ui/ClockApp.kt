@@ -189,7 +189,6 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         }
 
         var editing by remember { mutableStateOf<Alarm?>(null) }
-        var lockedAlarm by remember { mutableStateOf<Alarm?>(null) }
         val context = androidx.compose.ui.platform.LocalContext.current
         var protectedAction by remember { mutableStateOf<Pair<List<Alarm>, () -> Unit>?>(null) }
         fun guardAlarmChanges(ids: Set<Long>, action: () -> Unit) {
@@ -203,7 +202,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
             if (protected.isEmpty()) action() else protectedAction = protected to action
         }
         fun requestEdit(alarm: Alarm) = guardAlarmChanges(setOf(alarm.id)) {
-            if (alarm.wake.isLocked) lockedAlarm = alarm else editing = alarm
+            editing = alarm
         }
         protectedAction?.let { (alarms, action) ->
             val seed = remember(alarms) { System.nanoTime() }
@@ -227,13 +226,6 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                 },
                 confirmButton = { androidx.compose.material3.TextButton(onClick = { protectedAction = null }) { Text("Cancel") } },
             )
-        }
-        lockedAlarm?.let { alarm ->
-            UnlockAlarmDialog(alarm.label, onDismiss = { lockedAlarm = null }) {
-                vm.setAlarmLock(alarm.id, false)
-                editing = alarm.copy(wake = alarm.wake.copy(isLocked = false))
-                lockedAlarm = null
-            }
         }
         var relativePicker by remember { mutableStateOf(false) }
         var showNewAlarmPicker by remember { mutableStateOf(false) }
@@ -466,7 +458,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                     duplicateSignal = duplicateSignal,
                                     onDuplicate = { selection -> selection.forEach { vm.saveAlarm(it.asDuplicate()) } },
                                     onToggle = { id -> alarms.find { it.id == id }?.let {
-                                        if (it.wake.isLocked) requestEdit(it) else guardAlarmChanges(setOf(id)) { vm.toggleAlarm(id) }
+                                        guardAlarmChanges(setOf(id)) { vm.toggleAlarm(id) }
                                     } }, onEdit = ::requestEdit,
                                     onAddAlarm = { showNewAlarmPicker = true },
                                     onDeleteAlarms = { ids -> guardAlarmChanges(ids) { vm.deleteAlarms(ids) } },
@@ -658,33 +650,6 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
     }
 }
 
-
-@Composable
-internal fun UnlockAlarmDialog(label: String, onDismiss: () -> Unit, onUnlock: () -> Unit) {
-    val view = androidx.compose.ui.platform.LocalView.current
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Unlock alarm?") },
-        text = { Text(if (label.isBlank()) "Press and hold Unlock to make changes."
-            else "Press and hold Unlock to make changes to $label.") },
-        confirmButton = {
-            val shape = androidx.compose.foundation.shape.CircleShape
-            androidx.compose.material3.Surface(shape = shape, color = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary) {
-                Text("Unlock", Modifier.clip(shape).combinedClickable(
-                    role = androidx.compose.ui.semantics.Role.Button,
-                    onClick = {},
-                    onLongClickLabel = "Unlock alarm",
-                    onLongClick = {
-                        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                        onUnlock()
-                    },
-                ).padding(horizontal = 24.dp, vertical = 14.dp))
-            }
-        },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
 
 /** The pill has its own transition so the settings action remains anchored. */
 @Composable

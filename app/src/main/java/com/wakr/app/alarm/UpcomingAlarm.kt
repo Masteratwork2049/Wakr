@@ -63,7 +63,7 @@ internal object UpcomingAlarm {
             .setContentIntent(Notifications.openApp(context, Notifications.TAB_ALARMS))
             .setSilent(true).setTimeoutAfter((at-System.currentTimeMillis()).coerceAtLeast(1))
             .apply {
-                if (!alarm.wake.isLocked && !alarm.isPreRingProtected())
+                if (!alarm.isPreRingProtected())
                     addAction(0,"Dismiss this occurrence",pending(context,alarm.id,at,SKIP))
             }.build()
         try { NotificationManagerCompat.from(context).notify(tag(alarm.id),0,n) } catch (_: SecurityException) { }
@@ -76,7 +76,7 @@ internal object UpcomingAlarm {
             store.alarmsNow().firstOrNull { it.id == id }?.let { show(context,it,at) }
         } else {
             val updated = store.updateAlarms { list -> list.map { alarm ->
-                if (alarm.id != id || alarm.wake.isLocked || alarm.isPreRingProtected() || !matches(alarm,at) || at <= System.currentTimeMillis()) alarm
+                if (alarm.id != id || alarm.isPreRingProtected() || !matches(alarm,at) || at <= System.currentTimeMillis()) alarm
                 else if (alarm.isOneShot) alarm.copy(enabled=false,snoozedUntilMillis=null,skippedOccurrenceMillis=at)
                 else alarm.copy(skippedOccurrenceMillis=at,skippedOccurrenceDate=Instant.ofEpochMilli(at).atZone(alarm.scheduleZone(ZoneId.systemDefault())).toLocalDate(),snoozedUntilMillis=null)
             } }

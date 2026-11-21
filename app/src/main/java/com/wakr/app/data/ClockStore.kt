@@ -5,7 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -276,23 +275,6 @@ internal fun Preferences.toSettings() = ClockSettings(
         palette = enumOr(this[stringPreferencesKey("palette")], Palette.CONCEPT),
         darkMode = enumOr(this[stringPreferencesKey("darkMode")], DarkMode.SYSTEM),
         amoledBlack = this[booleanPreferencesKey("amoled")] ?: false,
-        dynamicIsland = this[booleanPreferencesKey("dynamicIsland")] ?: false,
-        overlayProfiles = IslandProfile.entries.associateWith { profile ->
-            fun value(field: String, legacy: String, fallback: Int) =
-                this[floatPreferencesKey("island_${profile.name}_${field}_dp")]
-                    ?: (this[intPreferencesKey("island_${profile.name}_$field")] ?: this[intPreferencesKey(legacy)] ?: fallback).toFloat()
-            IslandCalibration(value("x", "overlayOffsetX", FACTORY_OVERLAY_OFFSET_X),
-                value("y", "overlayOffsetY", FACTORY_OVERLAY_OFFSET_Y),
-                value("width", "overlayWidthOffset", FACTORY_OVERLAY_WIDTH_OFFSET),
-                value("height", "overlayHeightOffset", FACTORY_OVERLAY_HEIGHT_OFFSET),
-                enabled = this[booleanPreferencesKey("island_${profile.name}_enabled")] ?: true,
-                alignment = enumOr(this[stringPreferencesKey("island_${profile.name}_alignment")], IslandAlignment.CENTRE),
-                expandedPosition = enumOr(this[stringPreferencesKey("island_${profile.name}_expanded")], IslandExpandedPosition.OVERLAP_CUTOUT))
-        },
-        overlayOffsetX = this[intPreferencesKey("overlayOffsetX")] ?: FACTORY_OVERLAY_OFFSET_X,
-        overlayOffsetY = this[intPreferencesKey("overlayOffsetY")] ?: FACTORY_OVERLAY_OFFSET_Y,
-        overlayWidthOffset = this[intPreferencesKey("overlayWidthOffset")] ?: FACTORY_OVERLAY_WIDTH_OFFSET,
-        overlayHeightOffset = this[intPreferencesKey("overlayHeightOffset")] ?: FACTORY_OVERLAY_HEIGHT_OFFSET,
     ),
     defaultStartupPage = enumOr(this[stringPreferencesKey("defaultStartupPage")], DefaultStartupPage.ALARMS),
     hasCompletedInitialSetup = this[booleanPreferencesKey("hasCompletedInitialSetup")] ?: false,
@@ -319,21 +301,6 @@ internal fun androidx.datastore.preferences.core.MutablePreferences.writeSetting
     this[stringPreferencesKey("palette")] = s.theme.palette.name
     this[stringPreferencesKey("darkMode")] = s.theme.darkMode.name
     this[booleanPreferencesKey("amoled")] = s.theme.amoledBlack
-    this[booleanPreferencesKey("dynamicIsland")] = s.theme.dynamicIsland
-    this[intPreferencesKey("overlayOffsetX")] = s.theme.overlayOffsetX
-    this[intPreferencesKey("overlayOffsetY")] = s.theme.overlayOffsetY
-    this[intPreferencesKey("overlayWidthOffset")] = s.theme.overlayWidthOffset
-    this[intPreferencesKey("overlayHeightOffset")] = s.theme.overlayHeightOffset
-    IslandProfile.entries.forEach { profile ->
-        val value = s.theme.calibration(profile)
-        this[floatPreferencesKey("island_${profile.name}_x_dp")] = value.x
-        this[floatPreferencesKey("island_${profile.name}_y_dp")] = value.y
-        this[floatPreferencesKey("island_${profile.name}_width_dp")] = value.width
-        this[floatPreferencesKey("island_${profile.name}_height_dp")] = value.height
-        this[booleanPreferencesKey("island_${profile.name}_enabled")] = value.enabled
-        this[stringPreferencesKey("island_${profile.name}_alignment")] = value.alignment.name
-        this[stringPreferencesKey("island_${profile.name}_expanded")] = value.expandedPosition.name
-    }
     this[stringPreferencesKey("defaultStartupPage")] = s.defaultStartupPage.name
     this[booleanPreferencesKey("hasCompletedInitialSetup")] = s.hasCompletedInitialSetup
 }
@@ -377,7 +344,7 @@ internal fun parseAlarms(s: String): List<Alarm> = runCatching {
         val days = o.getJSONArray("days")
         Alarm(
             id = o.getLong("id"),
-            wake = o.optJSONObject("wake")?.toWakeOptions() ?: WakeOptions(),
+            wake = o.optJSONObject("wake")?.toWakeOptions() ?: WakeOptions(maxSnoozes = null),
             missions = o.optJSONArray("missions")?.records(JSONObject::toMission).orEmpty(),
             createdAt = o.longOrNull("createdAt"),
             pausedByGroup = o.optBoolean("groupPaused"), ringingAt = o.longOrNull("ringingAt"),

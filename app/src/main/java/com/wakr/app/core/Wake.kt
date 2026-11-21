@@ -1,6 +1,5 @@
 package com.wakr.app.core
 
-enum class AlarmDifficulty { EASY, NORMAL, HARD, NO_MERCY, CUSTOM }
 enum class AlarmSoundMode { ONE, SURPRISE, LOCAL_MUSIC }
 enum class VibrationPattern { DEFAULT, SOS, PULSE, HEARTBEAT }
 enum class MissionType { QR, NFC, FOCUS_TAP, MEMORY, PUZZLE, TYPING, MATH }
@@ -26,8 +25,6 @@ data class WakeOptions(
     val scheduledDateEpochDay: Long? = null,
     val pausedUntilEpochDay: Long? = null,
     val timeZoneId: String? = null,
-    val isLocked: Boolean = false,
-    val difficulty: AlarmDifficulty = AlarmDifficulty.EASY,
     val soundMode: AlarmSoundMode = AlarmSoundMode.ONE,
     val musicUris: List<String> = emptyList(),
     val volumePercent: Int = 100,
@@ -36,21 +33,17 @@ data class WakeOptions(
     val flashEnabled: Boolean = false,
     val flashStrobeEnabled: Boolean = false,
     val voiceAnnounceEnabled: Boolean = false,
-    val snoozeEnabled: Boolean = true,
     val snoozeDurationMin: Int? = null,
-    val maxSnoozes: Int? = null,
+    val maxSnoozes: Int? = 0,
     val shakeToSnooze: Boolean = false,
     val silenceAfterMin: Int? = null,
     val repeatMissedCount: Int = 0,
     val reRingIntervalMin: Int = 5,
     val deleteAfterDismiss: Boolean = false,
     val lockBeforeRingMin: Int = 0,
-    val relaunchOnLeave: Boolean = false,
     val rebootSurvivalMax: Int = 0,
     val stillAwakeChecksCount: Int = 0,
     val stillAwakeDelayMin: Int = 5,
-    // Null preserves the mission policy of alarms saved with a preset.
-    val requireMissions: Boolean? = null,
 )
 
 enum class WakeOutcome(val label: String) {

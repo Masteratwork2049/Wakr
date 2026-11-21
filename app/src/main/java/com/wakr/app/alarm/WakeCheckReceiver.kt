@@ -79,7 +79,7 @@ internal object WakeChecks {
         ClockStore(c).putWakeLog(log(alarm, at, now, WakeOutcome.DISMISSED))
         if (alarm.wake.stillAwakeChecksCount <= 0) return
         save(c, Check(alarm, now + alarm.wake.stillAwakeDelayMin.coerceIn(3, 15) * 60_000, now,
-            alarm.wake.stillAwakeChecksCount.coerceIn(1, 2)))
+            alarm.wake.stillAwakeChecksCount))
     }
 
     suspend fun recordEmergency(c: Context, alarm: Alarm, at: Long, now: Long) = mutex.withLock {
@@ -145,7 +145,7 @@ internal object WakeChecks {
                 rebootCount = 0, skippedOccurrenceDate = null, skippedOccurrenceMillis = null, snoozedUntilMillis = null,
                 isWakeCheckRetry = true, wake = check.alarm.wake.copy(relativeTriggerMillis = due, scheduledDateEpochDay = null,
                     pausedUntilEpochDay = null, deleteAfterDismiss = true, volumePercent = 100, fadeInSeconds = 0,
-                    maxSnoozes = null, snoozeEnabled = false, stillAwakeChecksCount = 0, silenceAfterMin = 0))
+                    maxSnoozes = 0, stillAwakeChecksCount = 0, silenceAfterMin = 0))
             RuntimeAlarms.update(c) { it + retry }
             AlarmScheduler.schedule(c, retry)
         }

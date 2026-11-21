@@ -29,10 +29,10 @@ internal object RuntimeAlarms {
                 timeZoneId = w.timeZoneId, deleteAfterDismiss = w.deleteAfterDismiss,
                 repeatMissedCount = w.repeatMissedCount, reRingIntervalMin = w.reRingIntervalMin,
                 silenceAfterMin = w.silenceAfterMin, flashEnabled = w.flashEnabled,
-                flashStrobeEnabled = w.flashStrobeEnabled, snoozeEnabled = w.snoozeEnabled,
+                flashStrobeEnabled = w.flashStrobeEnabled,
                 snoozeDurationMin = w.snoozeDurationMin, maxSnoozes = w.maxSnoozes,
-                rebootSurvivalMax = w.rebootSurvivalMax, relaunchOnLeave = w.relaunchOnLeave,
-                lockBeforeRingMin = w.lockBeforeRingMin, isLocked = w.isLocked,
+                rebootSurvivalMax = w.rebootSurvivalMax,
+                lockBeforeRingMin = w.lockBeforeRingMin,
                 volumePercent = w.volumePercent, fadeInSeconds = w.fadeInSeconds, vibrationPattern = w.vibrationPattern))
         prefs(context).edit().putString(alarm.id.toString(), encodeAlarms(listOf(minimal))).apply()
     }

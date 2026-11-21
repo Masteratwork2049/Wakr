@@ -4,7 +4,6 @@ import com.wakr.app.ui.responsive.persistentScrollEdges
 import android.app.Activity
 import android.app.NotificationManager
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,9 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.TextUtils
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -38,10 +35,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.outlined.AccessibilityNew
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.NotificationsNone
@@ -73,7 +68,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.wakr.app.overlay.OverlayAccessibilityService
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -122,13 +116,11 @@ fun OnboardingScreen(
     var isNotificationsGranted by remember { mutableStateOf(checkNotificationsGranted(context)) }
     var isFullScreenIntentGranted by remember { mutableStateOf(checkFullScreenIntentGranted(context)) }
     var isBackgroundGranted by remember { mutableStateOf(checkBackgroundGranted(context)) }
-    var isAccessibilityGranted by remember { mutableStateOf(checkAccessibilityGranted(context)) }
 
     fun refreshStates() {
         isNotificationsGranted = checkNotificationsGranted(context)
         isFullScreenIntentGranted = checkFullScreenIntentGranted(context)
         isBackgroundGranted = checkBackgroundGranted(context)
-        isAccessibilityGranted = checkAccessibilityGranted(context)
     }
 
     // Auto-refresh permission statuses whenever returning to app from Android Settings
@@ -178,7 +170,7 @@ fun OnboardingScreen(
 
         // Subtitle
         Text(
-            text = "A few quick permissions will make sure alarms, timers and the Dynamic Island work reliably, even when the app is closed.",
+            text = "A few quick permissions will make sure alarms, timers and the stopwatch work reliably, even when the app is closed.",
             style = MaterialTheme.typography.bodyLarge.copy(
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
@@ -256,36 +248,14 @@ fun OnboardingScreen(
             buttonTextColor = Color(0xFF072107),
             isGranted = isBackgroundGranted,
             onSetup = {
-                Log.d("DynamicIslandOverlay", "SETUP BATTERY DIRECT REQUEST")
+                Log.d("WakrSetup", "SETUP BATTERY DIRECT REQUEST")
                 @Suppress("BATTERY_CHARGING_STATE")
                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.fromParts("package", context.packageName, null)
                 }
                 launchIntent(context, intent) {
-                    Log.d("DynamicIslandOverlay", "SETUP BATTERY FALLBACK")
+                    Log.d("WakrSetup", "SETUP BATTERY FALLBACK")
                     Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                }
-            },
-        )
-
-        Spacer(Modifier.height(14.dp))
-
-        // Card 4: Accessibility (optional)
-        OnboardingSetupCard(
-            title = "Accessibility (optional)",
-            description = "Enable the Dynamic Island to show active timers and stopwatch controls over other apps, with interactive controls (e.g. pause, lap, dismiss). No personal data or screen content is read or collected.",
-            icon = Icons.Outlined.AccessibilityNew,
-            iconBgColor = Color(0xFFD7E3FF),
-            iconTintColor = Color(0xFF13428B),
-            buttonBgColor = Color(0xFFD7E3FF),
-            buttonTextColor = Color(0xFF001B3F),
-            isGranted = isAccessibilityGranted,
-            onSetup = {
-                Log.d("DynamicIslandOverlay", "SETUP ACCESSIBILITY REQUEST")
-                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                val launched = launchIntent(context, intent)
-                if (launched) {
-                    Toast.makeText(context, "Tap Wakr and turn on Accessibility.", Toast.LENGTH_LONG).show()
                 }
             },
         )
@@ -507,26 +477,6 @@ private fun checkFullScreenIntentGranted(context: Context): Boolean {
 private fun checkBackgroundGranted(context: Context): Boolean {
     val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
     return pm?.isIgnoringBatteryOptimizations(context.packageName) ?: true
-}
-
-fun checkAccessibilityGranted(context: Context): Boolean {
-    val enabledServicesSetting = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ) ?: return false
-
-    val expectedComponent = ComponentName(context, OverlayAccessibilityService::class.java)
-    val colonSplitter = TextUtils.SimpleStringSplitter(':')
-    colonSplitter.setString(enabledServicesSetting)
-
-    while (colonSplitter.hasNext()) {
-        val componentNameString = colonSplitter.next()
-        val enabledComponent = ComponentName.unflattenFromString(componentNameString)
-        if (enabledComponent != null && enabledComponent == expectedComponent) {
-            return true
-        }
-    }
-    return false
 }
 
 private fun launchIntent(context: Context, intent: Intent, fallbackProvider: (() -> Intent)? = null): Boolean {

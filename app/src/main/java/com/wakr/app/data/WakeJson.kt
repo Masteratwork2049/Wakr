@@ -1,6 +1,5 @@
 package com.wakr.app.data
 
-import com.wakr.app.core.AlarmDifficulty
 import com.wakr.app.core.AlarmMission
 import com.wakr.app.core.AlarmSoundMode
 import com.wakr.app.core.MissionDifficulty
@@ -33,9 +32,6 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("scheduledDateEpochDay", scheduledDateEpochDay)
     .put("pausedUntilEpochDay", pausedUntilEpochDay)
     .put("timeZoneId", timeZoneId)
-    .put("isLocked", isLocked)
-    .put("difficulty", difficulty.name)
-    .put("requireMissions", requireMissions)
     .put("soundMode", soundMode.name)
     .put("musicUris", JSONArray(musicUris))
     .put("volumePercent", volumePercent)
@@ -44,16 +40,14 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("flashEnabled", flashEnabled)
     .put("flashStrobeEnabled", flashStrobeEnabled)
     .put("voiceAnnounceEnabled", voiceAnnounceEnabled)
-    .put("snoozeEnabled", snoozeEnabled)
     .put("snoozeDurationMin", snoozeDurationMin)
-    .put("maxSnoozes", maxSnoozes)
+    .put("maxSnoozes", maxSnoozes ?: JSONObject.NULL)
     .put("shakeToSnooze", shakeToSnooze)
     .put("silenceAfterMin", silenceAfterMin)
     .put("repeatMissedCount", repeatMissedCount)
     .put("reRingIntervalMin", reRingIntervalMin)
     .put("deleteAfterDismiss", deleteAfterDismiss)
     .put("lockBeforeRingMin", lockBeforeRingMin)
-    .put("relaunchOnLeave", relaunchOnLeave)
     .put("rebootSurvivalMax", rebootSurvivalMax)
     .put("stillAwakeChecksCount", stillAwakeChecksCount)
     .put("stillAwakeDelayMin", stillAwakeDelayMin)
@@ -63,9 +57,6 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     scheduledDateEpochDay = longOrNull("scheduledDateEpochDay"),
     pausedUntilEpochDay = longOrNull("pausedUntilEpochDay"),
     timeZoneId = optString("timeZoneId").takeIf { !isNull("timeZoneId") && it.isNotEmpty() },
-    isLocked = optBoolean("isLocked", false),
-    difficulty = enum("difficulty", AlarmDifficulty.EASY),
-    requireMissions = opt("requireMissions") as? Boolean,
     soundMode = enum("soundMode", AlarmSoundMode.ONE),
     musicUris = optJSONArray("musicUris")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty(),
     volumePercent = optInt("volumePercent", 100),
@@ -74,16 +65,14 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     flashEnabled = optBoolean("flashEnabled", false),
     flashStrobeEnabled = optBoolean("flashStrobeEnabled", false),
     voiceAnnounceEnabled = optBoolean("voiceAnnounceEnabled", false),
-    snoozeEnabled = optBoolean("snoozeEnabled", true),
     snoozeDurationMin = intOrNull("snoozeDurationMin"),
-    maxSnoozes = intOrNull("maxSnoozes"),
+    maxSnoozes = if (optBoolean("snoozeEnabled", true)) intOrNull("maxSnoozes") else 0,
     shakeToSnooze = optBoolean("shakeToSnooze", false),
     silenceAfterMin = intOrNull("silenceAfterMin"),
     repeatMissedCount = optInt("repeatMissedCount", 0),
     reRingIntervalMin = optInt("reRingIntervalMin", 5),
     deleteAfterDismiss = optBoolean("deleteAfterDismiss", false),
     lockBeforeRingMin = optInt("lockBeforeRingMin", 0),
-    relaunchOnLeave = optBoolean("relaunchOnLeave", false),
     rebootSurvivalMax = optInt("rebootSurvivalMax", 0),
     stillAwakeChecksCount = optInt("stillAwakeChecksCount", 0),
     stillAwakeDelayMin = optInt("stillAwakeDelayMin", 5),

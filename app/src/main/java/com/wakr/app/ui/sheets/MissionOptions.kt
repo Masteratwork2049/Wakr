@@ -44,7 +44,7 @@ internal fun MissionOptions(
     var edit by remember { mutableStateOf<AlarmMission?>(null) }
     var preview by remember { mutableStateOf<AlarmMission?>(null) }
     var removed by remember { mutableStateOf<Pair<Int, AlarmMission>?>(null) }
-    DifficultyOptions(wake, missions.isNotEmpty(), onWake)
+    DifficultyOptions(wake, onWake)
     Spacer(Modifier.height(12.dp))
     val summary = when (missions.size) {
         0 -> "No missions"
@@ -52,10 +52,6 @@ internal fun MissionOptions(
         else -> "${missions.size} missions"
     }
     AlarmEditorSection("Wake-up missions", summary, Icons.Outlined.Psychology) {
-        if (!wake.runsMissions && missions.isNotEmpty()) {
-            Text("Turn on Require wake-up missions in Difficulty to use these missions.",
-                Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
-        }
         missions.forEachIndexed { index, mission ->
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -112,9 +108,6 @@ internal fun MissionOptions(
         MissionEditor(mission, onClose = { edit = null }) { updated ->
             onMissions(if (missions.any { it.id == updated.id }) missions.map { if (it.id == updated.id) updated else it }
                 else missions + updated)
-            if (missions.isEmpty() && wake.requireMissions == null && !wake.runsMissions) {
-                onWake(wake.copy(requireMissions = true))
-            }
             edit = null
         }
     }
@@ -231,12 +224,20 @@ private fun WakeBehaviorOptions(
         AlarmOptionSwitchRow("Voice and screen light", Icons.Outlined.RecordVoiceOver, wake.voiceAnnounceEnabled) { save(wake.copy(voiceAnnounceEnabled = it)) }
     }
     Spacer(Modifier.height(12.dp))
-    val snoozeSummary = if (!wake.snoozeEnabled) "Off in Difficulty" else
-        wake.snoozeDurationMin?.let { "$it min" } ?: "App duration"
-    AlarmEditorSection("Snooze", snoozeSummary, Icons.Outlined.Snooze) {
-        if (wake.snoozeEnabled) {
-            NumberChoice("Snooze duration", wake.snoozeDurationMin ?: 0, (0..30).toList(), { if (it == 0) "App default" else "$it min" }) { save(wake.copy(snoozeDurationMin = it.takeIf { n -> n > 0 })) }
-            AlarmOptionSwitchRow("Shake to snooze", Icons.Outlined.Vibration, wake.shakeToSnooze) { save(wake.copy(shakeToSnooze = it)) }
+    AlarmEditorSection("Snooze", snoozeLimitLabel(wake.maxSnoozes), Icons.Outlined.Snooze) {
+        // -1 is the picker value for an unlimited count; storage uses null.
+        NumberChoice("Snooze limit", wake.maxSnoozes ?: -1, (0..10).toList() + -1,
+            { snoozeLimitLabel(it.takeUnless { count -> count == -1 }) }) { selected ->
+            save(wake.copy(maxSnoozes = selected.takeUnless { it == -1 }))
+        }
+        if (wake.maxSnoozes != 0) {
+            NumberChoice("Snooze duration", wake.snoozeDurationMin ?: 0, (0..30).toList(),
+                { if (it == 0) "App default" else "$it min" }) {
+                save(wake.copy(snoozeDurationMin = it.takeIf { minutes -> minutes > 0 }))
+            }
+            AlarmOptionSwitchRow("Shake to snooze", Icons.Outlined.Vibration, wake.shakeToSnooze) {
+                save(wake.copy(shakeToSnooze = it))
+            }
         }
     }
     Spacer(Modifier.height(12.dp))
@@ -246,44 +247,126 @@ private fun WakeBehaviorOptions(
     }
 }
 
+private fun snoozeLimitLabel(limit: Int?): String = when (limit) {
+    null -> "Unlimited"
+    0 -> "No snooze"
+    else -> limit.toString()
+}
+
+private fun preRingLockLabel(minutes: Int): String = when {
+    minutes <= 0 -> "Off"
+    minutes == 60 -> "1 hour"
+    minutes % 60 == 0 -> "${minutes / 60} hours"
+    else -> "$minutes min"
+}
+
 @Composable
-private fun DifficultyOptions(wake: WakeOptions, hasMissions: Boolean, save: (WakeOptions) -> Unit) {
-    val missionsRequired = wake.needsMissions || (hasMissions && wake.runsMissions)
-    val missionSummary = if (missionsRequired) "Mission required" else "Swipe to dismiss"
-    val snoozeSummary = when {
-        !wake.snoozeEnabled -> "No snooze"
-        wake.maxSnoozes == null -> "Unlimited snooze"
-        else -> "Up to ${wake.maxSnoozes} snoozes"
-    }
-    AlarmEditorSection("Difficulty", "$missionSummary · $snoozeSummary", Icons.Outlined.Tune) {
-        AlarmOptionSwitchRow("Require wake-up missions", Icons.Outlined.Psychology, missionsRequired) {
-            save(wake.copy(requireMissions = it))
-        }
-        AlarmOptionSwitchRow("Allow snooze", Icons.Outlined.Snooze, wake.snoozeEnabled) { save(wake.copy(snoozeEnabled = it)) }
-        if (wake.snoozeEnabled) {
-            NumberChoice("Snooze limit", wake.maxSnoozes ?: 0, (0..10).toList(), { if (it == 0) "Unlimited" else it.toString() }) { save(wake.copy(maxSnoozes = it.takeIf { n -> n > 0 })) }
-        }
+private fun DifficultyOptions(wake: WakeOptions, save: (WakeOptions) -> Unit) {
+    val checks = wake.stillAwakeChecksCount
+    val protection = listOfNotNull(
+        preRingLockLabel(wake.lockBeforeRingMin).takeIf { wake.lockBeforeRingMin > 0 }?.let { "$it pre-ring lock" },
+        when (checks) {
+            0 -> null
+            1 -> "1 awake check"
+            else -> "$checks awake checks"
+        },
+    ).joinToString(" · ").ifEmpty { "Ring duration and protection" }
+    AlarmEditorSection("Difficulty", protection, Icons.Outlined.Tune) {
         NumberChoice("Silence after", wake.silenceAfterMin ?: -1, (-1..60).toList(),
             { if (it < 0) "App default" else if (it == 0) "Never" else "$it min" }) {
             save(wake.copy(silenceAfterMin = it.takeIf { minutes -> minutes >= 0 }))
         }
-        NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), { if (it == 0) "Off" else "$it min" }) { save(wake.copy(lockBeforeRingMin = it)) }
-        AlarmOptionSwitchRow("Re-launch if left", Icons.Outlined.NotificationsActive, wake.relaunchOnLeave) { save(wake.copy(relaunchOnLeave = it)) }
-        NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) { save(wake.copy(rebootSurvivalMax = it)) }
-        NumberChoice("Still-awake checks", wake.stillAwakeChecksCount, (0..2).toList(), { if (it == 0) "Off" else it.toString() }) { save(wake.copy(stillAwakeChecksCount = it)) }
-        if (wake.stillAwakeChecksCount > 0) NumberChoice("Still-awake delay", wake.stillAwakeDelayMin, (3..15).toList(), { "$it min" }) { save(wake.copy(stillAwakeDelayMin = it)) }
+        NumberChoice("Pre-ring lock", wake.lockBeforeRingMin, listOf(0, 15, 30, 60), ::preRingLockLabel,
+            custom = CustomNumber("Hours", 1..Int.MAX_VALUE / 60, unitsPerEntry = 60)) {
+            save(wake.copy(lockBeforeRingMin = it))
+        }
+        NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) {
+            save(wake.copy(rebootSurvivalMax = it))
+        }
+        NumberChoice("Still-awake checks", checks, (0..3).toList(), { if (it == 0) "Off" else it.toString() },
+            custom = CustomNumber("Number of checks (4 or more)", 4..Int.MAX_VALUE)) {
+            save(wake.copy(stillAwakeChecksCount = it))
+        }
+        if (checks > 0) NumberChoice("Still-awake delay", wake.stillAwakeDelayMin, (3..15).toList(), { "$it min" }) {
+            save(wake.copy(stillAwakeDelayMin = it))
+        }
     }
 }
 
+private data class CustomNumber(val label: String, val range: IntRange, val unitsPerEntry: Int = 1)
+
 @Composable
-private fun NumberChoice(title: String, current: Int, values: List<Int>, label: (Int) -> String, select: (Int) -> Unit) {
+private fun NumberChoice(
+    title: String,
+    current: Int,
+    values: List<Int>,
+    label: (Int) -> String,
+    custom: CustomNumber? = null,
+    select: (Int) -> Unit,
+) {
     var open by rememberSaveable { mutableStateOf(false) }
+    var enteringCustom by rememberSaveable { mutableStateOf(false) }
     NavigateRow(title, label(current)) { open = true }
-    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text(title) }, text = {
-        Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-            values.forEach { value -> NavigateRow(label(value), null) { select(value); open = false } }
-        }
-    }, confirmButton = { TextButton(onClick = { open = false }) { Text("Cancel") } })
+    if (!open) return
+    fun close() {
+        enteringCustom = false
+        open = false
+    }
+    var input by rememberSaveable { mutableStateOf("") }
+    val activeCustom = custom?.takeIf { enteringCustom }
+    val customValue = input.toIntOrNull()?.takeIf { value -> activeCustom?.range?.contains(value) == true }
+    AlertDialog(
+        onDismissRequest = ::close,
+        title = { Text(title) },
+        text = {
+            if (activeCustom != null) {
+                Column(
+                    Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(activeCustom.label, style = MaterialTheme.typography.labelLarge)
+                    Text(input.ifEmpty { "—" }, style = MaterialTheme.typography.headlineMedium)
+                    val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "Delete digit")
+                    keys.chunked(3).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { key ->
+                                FilledTonalButton(
+                                    onClick = {
+                                        input = when (key) {
+                                            "Clear" -> ""
+                                            "Delete digit" -> input.dropLast(1)
+                                            else -> if (input.length < 10) input + key else input
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(4.dp),
+                                ) {
+                                    if (key == "Delete digit") Icon(Icons.Outlined.Backspace, key)
+                                    else Text(key)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                values.forEach { value -> NavigateRow(label(value), null) { select(value); close() } }
+                if (custom != null) NavigateRow("Custom", null) {
+                    input = (current / custom.unitsPerEntry).coerceIn(custom.range).toString()
+                    enteringCustom = true
+                }
+            }
+        },
+        confirmButton = {
+            if (activeCustom == null) TextButton(onClick = ::close) { Text("Cancel") }
+            else TextButton(enabled = customValue != null, onClick = {
+                customValue?.let { select(it * activeCustom.unitsPerEntry) }
+                close()
+            }) { Text("Set") }
+        },
+        dismissButton = {
+            if (activeCustom != null) TextButton(onClick = { enteringCustom = false }) { Text("Back") }
+        },
+    )
 }
 
 private fun readMusicFolder(context: android.content.Context, folder: Uri): List<String> = runCatching {

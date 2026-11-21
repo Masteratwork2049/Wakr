@@ -87,7 +87,6 @@ internal fun AlarmSchedulingOptions(
                 setWake(wake.copy(flashEnabled = it))
             }
         }
-        SwitchRow("Lock alarm", "Require unlocking before editing", wake.isLocked) { setWake(wake.copy(isLocked = it)) }
     }
     if (dialog == "") return
     if (dialog == "Schedule alarm" || dialog == "Pause until") {

@@ -49,7 +49,6 @@ class BootReceiver : BroadcastReceiver() {
         alarms.filter { it.id in recover }.forEach { AlarmScheduler.recoverRinging(context, it) }
         if (!RuntimeAlarms.unlocked(context)) return
         WakeChecks.restore(context)
-        kotlinx.coroutines.withContext(Dispatchers.Main.immediate) { com.wakr.app.overlay.OverlayManager.init(context) }
         val store = ClockStore(context)
         // A reboot resets elapsedRealtime, so any stored deadline is meaningless. Rebuild the
         // timer's notification from what survived and let the store's own clamp decide.

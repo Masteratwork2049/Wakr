@@ -180,14 +180,10 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         AlarmScheduler.scheduleAll(ctx, updated)
     }
 
-    fun setAlarmLock(id: Long, locked: Boolean) = viewModelScope.launch {
-        store.updateAlarms { list -> list.map { if (it.id == id && canChange(it)) it.copy(wake = it.wake.copy(isLocked = locked)) else it } }
-    }
-
     fun skipNext(id: Long) = viewModelScope.launch {
         val now = java.time.ZonedDateTime.now()
         val updated = store.updateAlarms { alarms -> alarms.map { alarm ->
-            val next = if (alarm.id == id && !alarm.wake.isLocked && canChange(alarm)) alarm.nextFire(now) else null
+            val next = if (alarm.id == id && canChange(alarm)) alarm.nextFire(now) else null
             if (next == null) alarm else alarm.copy(enabled = !alarm.isOneShot, snoozedUntilMillis = null,
                 skippedOccurrenceMillis = next.toInstant().toEpochMilli(),
                 skippedOccurrenceDate = next.withZoneSameInstant(alarm.scheduleZone(now.zone)).toLocalDate())
@@ -197,7 +193,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleAlarm(id: Long) = viewModelScope.launch {
         val next = store.updateAlarms { list -> list.map {
-            if (it.id == id && !it.wake.isLocked && canChange(it)) it.copy(ringingAt = null, missedRetries = 0, pausedByGroup = false, enabled = !it.enabled, snoozedUntilMillis = null, skippedOccurrenceMillis = null, skippedOccurrenceDate = null) else it
+            if (it.id == id && canChange(it)) it.copy(ringingAt = null, missedRetries = 0, pausedByGroup = false, enabled = !it.enabled, snoozedUntilMillis = null, skippedOccurrenceMillis = null, skippedOccurrenceDate = null) else it
         } }
         next.firstOrNull { it.id == id }?.let { a ->
             if (a.enabled) AlarmScheduler.schedule(ctx, a) else AlarmScheduler.cancel(ctx, id)
@@ -211,7 +207,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         var applied: Alarm? = null
         store.updateAlarms { current ->
             val existing = current.firstOrNull { it.id == id }
-            if (existing != null && (!canChange(existing) || existing.wake.isLocked)) return@updateAlarms current
+            if (existing != null && !canChange(existing)) return@updateAlarms current
             val alarm = saved.preservingDismissal(existing)
             applied = alarm
             (if (existing == null) current + alarm else current.map { if (it.id == id) alarm else it })
@@ -228,7 +224,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         val removed = mutableSetOf<Long>()
         store.updateAlarms { alarms ->
             alarms.filterNot { alarm ->
-                (alarm.id in ids && !alarm.wake.isLocked && canChange(alarm)).also { if (it) removed += alarm.id }
+                (alarm.id in ids && canChange(alarm)).also { if (it) removed += alarm.id }
             }
         }
         removed.forEach { AlarmScheduler.cancel(ctx, it) }

@@ -347,14 +347,12 @@ class AlarmService : Service() {
             context.stopService(Intent(context, AlarmService::class.java))
         }
 
-        fun refreshRing(id: Long, at: Long, leaving: Boolean = false) {
+        fun refreshRing(id: Long, at: Long) {
             val service = current ?: return
             if (service.occurrence != (id to at)) return
             service.scope.launch {
                 val alarm = RuntimeAlarms.read(service).firstOrNull { it.id == id && it.ringingAt == at } ?: return@launch
-                if (!leaving || alarm.wake.relaunchOnLeave && alarm.missionsRemaining) {
-                    runCatching { NotificationManagerCompat.from(service).notify(Notifications.ID_RINGING, ringingNotification(service, alarm, at)) }
-                }
+                runCatching { NotificationManagerCompat.from(service).notify(Notifications.ID_RINGING, ringingNotification(service, alarm, at)) }
             }
         }
 

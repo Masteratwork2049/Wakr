@@ -3,35 +3,12 @@ package com.wakr.app.core
 import java.time.ZonedDateTime
 import kotlin.random.Random
 
-internal fun WakeOptions.withDifficulty(preset: AlarmDifficulty): WakeOptions {
-    if (preset == AlarmDifficulty.CUSTOM) return copy(requireMissions = null, difficulty = preset)
-    val hard = preset == AlarmDifficulty.HARD || preset == AlarmDifficulty.NO_MERCY
-    return copy(
-        difficulty = preset,
-        requireMissions = null,
-        snoozeEnabled = !hard,
-        maxSnoozes = 3.takeIf { preset == AlarmDifficulty.NORMAL },
-        silenceAfterMin = 0.takeUnless { preset == AlarmDifficulty.EASY },
-        lockBeforeRingMin = if (preset == AlarmDifficulty.NO_MERCY) 60 else 0,
-        relaunchOnLeave = hard,
-        rebootSurvivalMax = if (preset == AlarmDifficulty.NO_MERCY) 5 else if (hard) 3 else 0,
-        stillAwakeChecksCount = if (preset == AlarmDifficulty.NO_MERCY) 2 else if (hard) 1 else 0,
-    )
-}
-
-internal val WakeOptions.needsMissions: Boolean
-    get() = requireMissions ?: (difficulty in setOf(AlarmDifficulty.NORMAL, AlarmDifficulty.HARD, AlarmDifficulty.NO_MERCY))
-
-internal val WakeOptions.runsMissions: Boolean
-    get() = requireMissions ?: (difficulty != AlarmDifficulty.EASY)
-
-internal val Alarm.ringMissions: List<AlarmMission>
-    get() = missions.takeIf { wake.runsMissions }.orEmpty()
+internal val Alarm.ringMissions: List<AlarmMission> get() = missions
 
 internal val Alarm.missionsRemaining: Boolean
     get() = missionIndex < maxOf(ringMissions.size, privateMissionCount)
 
-internal fun Alarm.canSnooze(): Boolean = wake.snoozeEnabled && (wake.maxSnoozes?.let { snoozeCount < it } ?: true)
+internal fun Alarm.canSnooze(): Boolean = wake.maxSnoozes?.let { it > 0 && snoozeCount < it } ?: true
 
 internal fun Alarm.isPreRingProtected(now: ZonedDateTime = ZonedDateTime.now()): Boolean {
     if (wake.lockBeforeRingMin <= 0) return false
