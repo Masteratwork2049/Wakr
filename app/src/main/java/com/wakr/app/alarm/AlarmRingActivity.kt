@@ -289,6 +289,15 @@ class AlarmRingActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
+        val at = intent.getLongExtra(UpcomingAlarm.AT, -1L)
+        if (alertCanReturn && !isFinishing && !isChangingConfigurations && AlarmService.isAlarmRinging(id, at)) {
+            sendAlertReturn(this, intent(this, id, intent.getStringExtra(EXTRA_LABEL).orEmpty(), at))
+        }
+    }
+
     companion object {
         const val EXTRA_LABEL = "label"
 
@@ -301,9 +310,7 @@ class AlarmRingActivity : ComponentActivity() {
                 .putExtra(EXTRA_LABEL, label)
 
         fun intent(context: Context, id: Long, label: String, at: Long): PendingIntent =
-            PendingIntent.getActivity(context, id.toInt(),
-                screenIntent(context, id, label, at),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            alertActivityIntent(context, id.toInt(), screenIntent(context, id, label, at))
 
     }
 }

@@ -4,6 +4,8 @@ package com.wakr.app.ui.screens
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.animateColorAsState
@@ -56,6 +58,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,6 +69,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -126,7 +130,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
@@ -441,65 +447,96 @@ fun AlarmsScreen(
                     )
                 } else {
                     BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val usableWidth = maxWidth - start - end
-                    val columns = if (!listLayout && usableWidth >= 280.dp) 2 else 1
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(columns),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = panelPadding,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        itemsIndexed(displayedAlarms, key = { _, alarm -> alarm.id }) { index, alarm ->
-                            val isCardVisible = alarm.id !in exitingAlarmIds && (index < visibleCardsCount)
-                            androidx.compose.animation.AnimatedVisibility(
-                                modifier = Modifier.animateItem(
-                                    placementSpec = spring(
-                                        stiffness = 380f,
-                                        dampingRatio = 0.68f,
+                        val usableWidth = maxWidth - start - end
+                        val scroll = remember { AlarmLayoutScroll() }
+                        val maxInitialOffset = with(LocalDensity.current) { 48.dp.roundToPx() }
+                        val anchor = remember(listLayout) {
+                            scroll.anchor(displayedAlarms, maxInitialOffset)
+                        }
+                        SharedTransitionLayout(Modifier.fillMaxSize().clipToBounds()) {
+                            AnimatedContent(
+                                targetState = listLayout,
+                                modifier = Modifier.fillMaxSize(),
+                                transitionSpec = {
+                                    (fadeIn(tween(220)) togetherWith fadeOut(tween(180))).using(null)
+                                },
+                                label = "Alarm layout",
+                            ) { isList ->
+                                val visibility = this
+                                val currentLayout = isList == listLayout
+                                val gridState = rememberSaveable(saver = LazyGridState.Saver) {
+                                    LazyGridState(anchor.index, anchor.offsetPx)
+                                }
+                                SideEffect { if (currentLayout) scroll.active = gridState }
+                                val columns = if (!isList && usableWidth >= 280.dp) 2 else 1
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(columns),
+                                    state = gridState,
+                                    modifier = Modifier.fillMaxSize().then(
+                                        if (currentLayout) Modifier else Modifier.clearAndSetSemantics { hideFromAccessibility() }
                                     ),
-                                ),
-                                visible = isCardVisible,
-                                enter = fadeIn(tween(180)) +
-                                    scaleIn(
-                                        initialScale = 0.86f,
-                                        animationSpec = spring(
-                                            dampingRatio = 0.62f,
-                                            stiffness = 400f,
-                                        ),
-                                    ) +
-                                    slideInVertically(
-                                        animationSpec = spring(
-                                            dampingRatio = 0.62f,
-                                            stiffness = 400f,
-                                        ),
-                                    ) { it / 10 },
-                                exit = fadeOut(tween(260)) +
-                                    scaleOut(
-                                        targetScale = 0.90f,
-                                        animationSpec = spring(dampingRatio = 0.78f, stiffness = 500f),
-                                    ),
-                            ) {
-                                AlarmTile(
-                                    alarm = alarm,
-                                    maxTileWidth = if (listLayout) 640.dp else if (columns == 1) 220.dp else Dp.Infinity,
-                                    listLayout = listLayout,
-                                    order = order,
-                                    selected = alarm.id in selectedIds || (widePane && editingAlarm?.id == alarm.id),
-                                    inSelectionMode = inSelectionMode,
-                                    onToggle = { onToggle(alarm.id) },
-                                    onEdit = { onEdit(alarm) },
-                                    onToggleSelect = {
-                                        selectedIds = if (alarm.id in selectedIds) {
-                                            selectedIds - alarm.id
-                                        } else {
-                                            selectedIds + alarm.id
+                                    userScrollEnabled = currentLayout,
+                                    contentPadding = panelPadding,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    itemsIndexed(displayedAlarms, key = { _, alarm -> alarm.id }) { index, alarm ->
+                                        val isCardVisible = alarm.id !in exitingAlarmIds && (index < visibleCardsCount)
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            modifier = Modifier.animateItem(
+                                                placementSpec = spring(
+                                                    stiffness = 380f,
+                                                    dampingRatio = 0.68f,
+                                                ),
+                                            ),
+                                            visible = isCardVisible,
+                                            enter = fadeIn(tween(180)) +
+                                                scaleIn(
+                                                    initialScale = 0.86f,
+                                                    animationSpec = spring(
+                                                        dampingRatio = 0.62f,
+                                                        stiffness = 400f,
+                                                    ),
+                                                ) +
+                                                slideInVertically(
+                                                    animationSpec = spring(
+                                                        dampingRatio = 0.62f,
+                                                        stiffness = 400f,
+                                                    ),
+                                                ) { it / 10 },
+                                            exit = fadeOut(tween(260)) +
+                                                scaleOut(
+                                                    targetScale = 0.90f,
+                                                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 500f),
+                                                ),
+                                        ) {
+                                            AlarmTile(
+                                                alarm = alarm,
+                                                maxTileWidth = if (isList) 640.dp else if (columns == 1) 220.dp else Dp.Infinity,
+                                                listLayout = isList,
+                                                itemModifier = Modifier.sharedBounds(
+                                                    sharedContentState = rememberSharedContentState(alarm.id),
+                                                    animatedVisibilityScope = visibility,
+                                                    boundsTransform = { _, _ -> tween(310, easing = FastOutSlowInEasing) },
+                                                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.FillBounds),
+                                                ),
+                                                order = order,
+                                                selected = alarm.id in selectedIds || (widePane && editingAlarm?.id == alarm.id),
+                                                inSelectionMode = inSelectionMode,
+                                                onToggle = { if (currentLayout) onToggle(alarm.id) },
+                                                onEdit = { if (currentLayout) onEdit(alarm) },
+                                                onToggleSelect = {
+                                                    if (currentLayout) {
+                                                        selectedIds = if (alarm.id in selectedIds) selectedIds - alarm.id
+                                                            else selectedIds + alarm.id
+                                                    }
+                                                },
+                                            )
                                         }
-                                    },
-                                )
+                                    }
+                                }
                             }
                         }
-                    }
                     }
                 }
             }
@@ -713,6 +750,23 @@ private fun rememberMeridiemFit(
         MeridiemFit(width, with(density) { (boxOffset + minuteMid - meridiemMid).toDp() })
     }
 }
+
+private class AlarmLayoutScroll {
+    var active: LazyGridState? = null
+
+    fun anchor(alarms: List<Alarm>, maxOffset: Int): Anchor {
+        val grid = active ?: return Anchor(0, 0)
+        val visible = grid.layoutInfo.visibleItemsInfo.firstOrNull { it.index == grid.firstVisibleItemIndex }
+        val position = alarms.indexOfFirst { it.id == visible?.key }
+        return Anchor(
+            position.takeIf { it >= 0 } ?: grid.firstVisibleItemIndex.coerceIn(0, alarms.lastIndex.coerceAtLeast(0)),
+            grid.firstVisibleItemScrollOffset.coerceIn(0, maxOffset),
+        )
+    }
+
+    data class Anchor(val index: Int, val offsetPx: Int)
+}
+
 
 /** Any size would do; widths are linear in the cap, so this only sets the measurement's precision. */
 private const val REFERENCE_CAP_DP = 120f

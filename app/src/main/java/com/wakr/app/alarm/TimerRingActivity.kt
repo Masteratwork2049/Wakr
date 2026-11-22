@@ -1,5 +1,6 @@
 package com.wakr.app.alarm
 
+import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -111,6 +112,14 @@ class TimerRingActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        val id = displayedId
+        if (id != null && !dismissing && !isFinishing && !isChangingConfigurations && AlarmService.isTimerChiming(id)) {
+            sendAlertReturn(this, pendingIntent(this, id))
+        }
+    }
+
     companion object {
         internal fun screenIntent(context: Context, id: Long) =
             Intent(context, TimerRingActivity::class.java)
@@ -118,9 +127,8 @@ class TimerRingActivity : ComponentActivity() {
                 .putExtra(AlarmReceiver.EXTRA_ID, id)
 
         internal fun pendingIntent(context: Context, id: Long): PendingIntent =
-            PendingIntent.getActivity(context, id.toInt(),
-                screenIntent(context, id).setData(android.net.Uri.parse("wakr://timer-alert/$id")),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            alertActivityIntent(context, id.toInt(),
+                screenIntent(context, id).setData(android.net.Uri.parse("wakr://timer-alert/$id")))
     }
 }
 
@@ -175,5 +183,32 @@ internal fun launchAlertIfAllowed(context: Context, intent: Intent) {
         context.startActivity(intent)
     } catch (error: SecurityException) {
         android.util.Log.d("WakrAlert", "Android did not allow the alert to open", error)
+    }
+}
+
+/** The intent is explicit, immutable, and only targets a Wakr alert activity. */
+internal fun alertActivityIntent(context: Context, requestCode: Int, intent: Intent): PendingIntent {
+    val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        ActivityOptions.makeBasic().setPendingIntentCreatorBackgroundActivityStartMode(
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+        ).toBundle()
+    } else null
+    return PendingIntent.getActivity(context, requestCode, intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE, options)
+}
+
+/** Retry after the system has moved the task away. Android still decides whether to launch. */
+internal fun sendAlertReturn(context: Context, alert: PendingIntent) {
+    try {
+        val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            ).toBundle()
+        } else null
+        alert.send(context, 0, null, null, null, null, options)
+    } catch (error: PendingIntent.CanceledException) {
+        android.util.Log.d("WakrAlert", "The alert no longer has an active launch intent", error)
+    } catch (error: SecurityException) {
+        android.util.Log.d("WakrAlert", "Android declined the return request", error)
     }
 }
