@@ -373,7 +373,11 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                 if (activeTab == Tab.WORLD) worldPresentation.deletionConfirmation.value = true
                                 else deleteClickSignal++
                             },
-                            onSelectAll = if (activeTab == Tab.ALARMS) ({ selectAllSignal++ }) else null,
+                            onSelectAll = {
+                                if (activeTab == Tab.WORLD) {
+                                    worldPresentation.deletionSelection.value = cities.mapTo(mutableSetOf()) { it.id }
+                                } else selectAllSignal++
+                            },
                             onDuplicate = if (activeTab == Tab.ALARMS) ({ duplicateSignal++ }) else null,
                             deleteDescription = if (activeTab == Tab.WORLD) "Delete selected locations" else "Delete selected alarms",
                         )

@@ -258,6 +258,17 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         store.updateCities { current -> current.filterNot { it.id in ids } }
     }
 
+    fun moveCity(id: String, anchorId: String, afterAnchor: Boolean) = viewModelScope.launch {
+        store.updateCities { current ->
+            val city = current.firstOrNull { it.id == id } ?: return@updateCities current
+            val others = current.filterNot { it.id == id }
+            val anchor = others.indexOfFirst { it.id == anchorId }
+            if (anchor < 0) current else others.toMutableList().apply {
+                add(anchor + if (afterAnchor) 1 else 0, city)
+            }
+        }
+    }
+
     /* ── Timer ──────────────────────────────────────────────────────────────────────────────── */
 
     /**

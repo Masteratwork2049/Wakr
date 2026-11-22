@@ -24,6 +24,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +68,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -238,6 +243,51 @@ internal fun SavedLocationGrid(
     var confirmDelete by presentation.deletionConfirmation
     val view = LocalView.current
     val selectionMode = selectedIds.isNotEmpty()
+    val reorder = remember(state) { WorldClockReorder(state) }
+    var dragStartOrder by remember { mutableStateOf<List<WorldCity>?>(null) }
+    var reorderScroll by remember { mutableStateOf<Job?>(null) }
+    var reorderSettle by remember { mutableStateOf<Job?>(null) }
+    val reorderEdge = with(LocalDensity.current) { 52.dp.toPx() }
+    val canReorder = !selectionMode && !confirmDelete && exitingIds.isEmpty() &&
+        vm.newlyAddedCity == null && entranceVisible != false && displayedCities.size > 1
+
+    fun moveDuringDrag(id: String) {
+        if (dragStartOrder == null) return
+        val from = displayedCities.indexOfFirst { it.id == id }
+        val to = reorder.targetIndex() ?: return
+        if (from >= 0 && from != to && to in displayedCities.indices) {
+            displayedCities = displayedCities.moveCity(from, to)
+        }
+    }
+
+    val startDrag by rememberUpdatedState<() -> Unit> {
+        reorderSettle?.cancel()
+        dragStartOrder = displayedCities
+    }
+    val updateDrag by rememberUpdatedState<(String) -> Unit> { id ->
+        if (reorderScroll == null) {
+            reorderScroll = scope.launch { reorder.scrollAtEdge(reorderEdge) { moveDuringDrag(id) } }
+        }
+        moveDuringDrag(id)
+    }
+    val finishDrag by rememberUpdatedState<(String, Boolean) -> Unit> { id, dropped ->
+        reorderScroll?.cancel()
+        reorderScroll = null
+        val original = dragStartOrder
+        dragStartOrder = null
+        if (original != null) {
+            if (!dropped) {
+                displayedCities = original
+            } else {
+                val index = displayedCities.indexOfFirst { it.id == id }
+                if (index >= 0 && original.indexOfFirst { it.id == id } != index) {
+                    val anchor = displayedCities[if (index == 0) 1 else index - 1]
+                    vm.moveCity(id, anchor.id, afterAnchor = index > 0)
+                }
+            }
+        }
+        reorderSettle = scope.launch { reorder.settle() }
+    }
     BackHandler(enabled = selectionMode && !confirmDelete && entranceVisible != false) { selectedIds = emptySet() }
     LaunchedEffect(entranceVisible) {
         if (entranceVisible == false) { selectedIds = emptySet(); confirmDelete = false }
@@ -365,6 +415,10 @@ internal fun SavedLocationGrid(
             state = state,
             modifier = Modifier.fillMaxWidth().weight(1f)
                 .wrapContentWidth(unbounded = true).requiredWidth(drawingWidth)
+                .onGloballyPositioned { reorder.coordinates = it }
+                .cityReorderGesture(reorder, canReorder,
+                    onStart = { startDrag() }, onMove = { updateDrag(it) },
+                    onFinish = { id, dropped -> finishDrag(id, dropped) })
                 .progressiveListEdgeMask(topStrength = edgeStrength, bottomStrength = edgeStrength)
                 .drawBehind {
                     val anchor = state.layoutInfo.visibleItemsInfo.firstOrNull()
@@ -401,30 +455,39 @@ internal fun SavedLocationGrid(
                 val entry = pageEntries["local"]
                 Box(Modifier.fillMaxWidth().cityPageEntrance(entry, cardWidth), Alignment.Center) {
                     CityGridCard(city = localCity, selected = !selectionMode && selectedCityId == null,
-                        nowUtcMillis = nowUtcMillis, onClick = { selectedIds = emptySet(); onShowLocalTime() },
+                        nowUtcMillis = nowUtcMillis, onClick = { if (selectedIds.isEmpty()) onShowLocalTime() },
                         cardHeight = cardHeight, selectionMode = selectionMode, modifier = Modifier.width(cardWidth))
                 }
             }
-            items(frameCities, key = { it.id }) { city ->
+            itemsIndexed(frameCities, key = { _, city -> city.id }) { index, city ->
+                val lifted = reorder.cityId == city.id
                 val entry = pageEntries[city.id]
                 val exiting = city.id in exitingIds
                 val exitAlpha by animateFloatAsState(if (exiting) 0f else 1f, tween(260), label = "cityDeleteFade")
                 val exitScale by animateFloatAsState(if (exiting) .90f else 1f,
                     spring(dampingRatio = .78f, stiffness = 500f), label = "cityDeleteScale")
                 val lightBounds = remember(cardWidth) { cityLightLayerOutsets(cardWidth) }
-                Box(Modifier.animateItem(
+                Box(Modifier.zIndex(if (lifted) 1f else 0f).animateItem(
                     fadeInSpec = null, fadeOutSpec = null,
                     // Match Alarm cards. Only the centred-padding phase of an addition
                     // owns placement; ordinary scrolling must not disable the spring.
-                    placementSpec = if (vm.newlyAddedCity != null && gutterMotion.isRunning) null
+                    placementSpec = if (lifted || vm.newlyAddedCity != null && gutterMotion.isRunning) null
                         else spring(dampingRatio = .68f, stiffness = 380f))
-                    .fillMaxWidth().height(cardHeight).cityPageEntrance(entry, cardWidth), Alignment.Center) {
+                    .fillMaxWidth().height(cardHeight).cityPageEntrance(entry, cardWidth)
+                    .graphicsLayer {
+                        if (lifted) {
+                            val delta = reorder.offset(city.id)
+                            translationX = delta.x
+                            translationY = delta.y
+                        }
+                    }, Alignment.Center) {
                     LocationCard(
                         cardHeight = cardHeight, city = city,
                         showSelectionBadge = selectionMode,
+                        reserveDragHandle = frameCities.size > 1,
                         selected = if (selectionMode) city.id in selectedIds else city.id == selectedCityId,
                         nowUtcMillis = nowUtcMillis,
-                        onSelect = { if (selectionMode) toggleSelection(city.id) else onSelectCity(city) },
+                        onSelect = { if (selectedIds.isNotEmpty()) toggleSelection(city.id) else onSelectCity(city) },
                         onLongPress = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             toggleSelection(city.id)
@@ -448,6 +511,34 @@ internal fun SavedLocationGrid(
                             }
                         },
                     )
+                    if (canReorder) {
+                        DisposableEffect(reorder, city.id) {
+                            onDispose { reorder.handles.remove(city.id) }
+                        }
+                        Box(Modifier.width(cardWidth).height(cardHeight), contentAlignment = Alignment.BottomEnd) {
+                            Box(Modifier.padding(end = 2.dp, bottom = 1.dp).size(44.dp)
+                                .onGloballyPositioned { reorder.handles[city.id] = it }
+                                .semantics {
+                                    customActions = listOfNotNull(
+                                        frameCities.getOrNull(index - 1)?.let { earlier ->
+                                            CustomAccessibilityAction("Move ${city.city} earlier") {
+                                                vm.moveCity(city.id, earlier.id, afterAnchor = false)
+                                                true
+                                            }
+                                        },
+                                        frameCities.getOrNull(index + 1)?.let { later ->
+                                            CustomAccessibilityAction("Move ${city.city} later") {
+                                                vm.moveCity(city.id, later.id, afterAnchor = true)
+                                                true
+                                            }
+                                        },
+                                    )
+                                }, contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.DragHandle, "Reorder ${city.city}",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -493,7 +584,7 @@ internal fun cityLightLayerOutsets(cardWidth: Dp): LayerOutsets {
 @Composable
 private fun LocationCard(
     cardHeight: Dp, city: WorldCity, selected: Boolean, nowUtcMillis: Long,
-    showSelectionBadge: Boolean,
+    showSelectionBadge: Boolean, reserveDragHandle: Boolean,
     onSelect: () -> Unit, onLongPress: () -> Unit, onRequestDelete: () -> Unit,
     enabled: Boolean, entering: Boolean, pendingEntrance: Boolean,
     arrivalAlpha: androidx.compose.runtime.State<Float>,
@@ -510,6 +601,7 @@ private fun LocationCard(
         val lightBounds = remember(maxWidth) { cityLightLayerOutsets(maxWidth) }
         CityGridCard(city = city, selected = selected, nowUtcMillis = nowUtcMillis, cardHeight = cardHeight,
             showSelectionBadge = showSelectionBadge, selectionMode = showSelectionBadge,
+            reserveDragHandle = reserveDragHandle,
             onClick = { if (enabled && !pendingEntrance) onSelect() },
             onLongClick = { if (enabled && !pendingEntrance) onLongPress() },
             deleteAction = CustomAccessibilityAction("Delete ${city.city}") {
@@ -532,6 +624,7 @@ private fun CityGridCard(
     deleteAction: CustomAccessibilityAction? = null,
     showSelectionBadge: Boolean = false,
     selectionMode: Boolean = false,
+    reserveDragHandle: Boolean = false,
 ) {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val local = city.timeAt(nowUtcMillis)
@@ -582,7 +675,7 @@ private fun CityGridCard(
             .copy(alpha = (if (dark) .12f else .36f))
         spotShadowColor = (if (dark) Color.Black else primary).copy(alpha = (if (dark) .12f else .30f))
     }) {
-        val reserved = if (!use24h) 20f else 0f
+        val reserved = (if (!use24h) 20f else 0f) + if (reserveDragHandle) 26f else 0f
         val measurer = rememberTextMeasurer()
         val baseTimeStyle = WorldClockType.cardTime()
         val measuredWidth = measurer.measure(time, baseTimeStyle).size.width.toFloat()
