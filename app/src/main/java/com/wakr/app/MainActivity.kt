@@ -11,6 +11,12 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.wakr.app.alarm.Notifications
 import com.wakr.app.alarm.AlarmService
+import com.wakr.app.alarm.TimerRuntime
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.wakr.app.ui.ClockApp
 
 class MainActivity : ComponentActivity() {
@@ -41,6 +47,11 @@ class MainActivity : ComponentActivity() {
         // Edge-to-edge is enabled inside ClockTheme, where the effective dark/light state is known
         // and the system-bar icon contrast can be set to match it.
         setContent { ClockApp(startTab = startTab, startRequestId = navigationRequestId) }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch(Dispatchers.Default) { TimerRuntime.watchDeadlines(applicationContext) }
+            }
+        }
     }
 
     override fun onStart() {

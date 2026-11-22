@@ -12,6 +12,10 @@ import com.wakr.app.core.withAddedSeconds
 import com.wakr.app.data.ClockStore
 import java.time.Duration
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -76,6 +80,21 @@ internal object TimerRuntime {
         AlarmService.refreshTimerChime()
     }
 
+    /** While the app is visible, wake at the countdown deadline without waiting for a broadcast. */
+    suspend fun watchDeadlines(context: Context) {
+        ClockStore(context).timers.map { timers ->
+            timers.filter { it.state == TimerState.RUNNING }.minOfOrNull { it.deadlineElapsedMillis }
+        }.distinctUntilChanged().collectLatest { deadline ->
+            if (deadline == null) return@collectLatest
+            var remaining = deadline - SystemClock.elapsedRealtime()
+            while (remaining > 0L) {
+                delay(remaining)
+                remaining = deadline - SystemClock.elapsedRealtime()
+            }
+            expire(context, -1L)
+        }
+    }
+
     suspend fun expire(context: Context, id: Long) = transaction {
         val store = ClockStore(context)
         val now = SystemClock.elapsedRealtime()
@@ -89,12 +108,13 @@ internal object TimerRuntime {
         }
         val byId = expired.associateBy { it.id }
         store.updateTimers { timers -> timers.map { byId[it.id] ?: it } }
-        expired.forEach { TimerScheduler.sync(context, it.id, it) }
         try {
             ContextCompat.startForegroundService(context, Intent(context, AlarmService::class.java)
                 .setAction(AlarmService.ACTION_START_TIMER))
         } catch (error: IllegalStateException) {
             android.util.Log.w("TimerRuntime", "Unable to start timer audio", error)
+        } finally {
+            expired.forEach { TimerScheduler.sync(context, it.id, it) }
         }
     }
 

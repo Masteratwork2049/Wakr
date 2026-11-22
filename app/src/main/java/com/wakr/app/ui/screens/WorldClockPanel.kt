@@ -311,7 +311,8 @@ internal fun SavedLocationGrid(
         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
     }
     if (confirmDelete && selectedIds.isNotEmpty()) DeleteItemsConfirmationSheet(
-        count = selectedIds.size, itemName = "location", onDismiss = { confirmDelete = false },
+        count = selectedIds.size, itemName = "location", deleteContentColor = Color.Black,
+        onDismiss = { confirmDelete = false },
         onConfirmDelete = {
             val ids = selectedIds
             val remaining = cities.filterNot { it.id in ids }
