@@ -4,33 +4,22 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,62 +33,39 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Backspace
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlin.math.abs
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.util.lerp
 import com.wakr.app.core.ClockTimer
-import com.wakr.app.core.TimerState
 import com.wakr.app.data.DEFAULT_TIMER_PRESETS
 import com.wakr.app.ui.timerReadoutGeometry
 import com.wakr.app.ui.featheredVerticalViewport
 import com.wakr.app.data.formatPresetLabel
 import com.wakr.app.ui.glass
-import com.wakr.app.ui.elasticClickable
 import com.wakr.app.ui.luminousElasticClickable
 import com.wakr.app.ui.responsive.LocalAppWindowSizeInfo
 import com.wakr.app.ui.responsive.TwoPaneLayout
@@ -108,175 +74,93 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import com.wakr.app.ui.theme.ClockFace
 import com.wakr.app.ui.theme.Numerals
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.Duration
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
-fun TimersScreen(
-    timer: ClockTimer?,
+internal fun TimersScreen(
+    timers: List<ClockTimer>,
     draft: Duration,
-    nowElapsedMillis: Long,
+    nowElapsedMillis: State<Long>,
     presets: List<Int> = DEFAULT_TIMER_PRESETS,
     onDigits: (String) -> Unit,
     onBackspace: () -> Unit,
     onResetDraft: () -> Unit,
     onPreset: (Int) -> Unit,
     onEditPreset: (Int, Int) -> Unit,
-    onStart: () -> Unit,
-    onPauseResume: () -> Unit,
-    onAddTen: () -> Unit,
-    onCancel: () -> Unit,
+    onStart: (String) -> Unit,
+    onPauseResume: (Long) -> Unit,
+    onAddTen: (Long) -> Unit,
+    onCancel: (Long) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
-    val active = timer != null
-    val remaining = timer?.remaining(nowElapsedMillis) ?: Duration.ZERO
-    val isFinished = timer?.state == TimerState.FINISHED || (timer?.state == TimerState.RUNNING && remaining.isZero)
-    val running = timer?.state == TimerState.RUNNING && !isFinished
-    val windowSizeInfo = LocalAppWindowSizeInfo.current
-    val bodyScroll = rememberScrollState()
-
-    if (windowSizeInfo.isExpanded) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            AnimatedContent(
-                modifier = Modifier.graphicsLayer { clip = false },
-                targetState = active,
-                transitionSpec = {
-                    if (targetState) {
-                        slideInVertically(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = 420f,
-                            ),
-                            initialOffsetY = { it / 5 },
-                        ) + fadeIn(tween(220)) togetherWith
-                            (slideOutVertically(
-                                animationSpec = tween(160),
-                                targetOffsetY = { -it / 10 },
-                            ) + fadeOut(tween(140))) using SizeTransform(clip = false)
-                    } else {
-                        slideInVertically(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = 420f,
-                            ),
-                            initialOffsetY = { -it / 10 },
-                        ) + fadeIn(tween(220)) togetherWith
-                            (slideOutVertically(
-                                animationSpec = tween(160),
-                                targetOffsetY = { it / 5 },
-                            ) + fadeOut(tween(140))) using SizeTransform(clip = false)
-                    }
-                },
-                label = "timerBodyExpanded",
-            ) { showingActive ->
-                if (showingActive && timer != null) {
-                    ExpandedRunningTimerBody(
-                        timer = timer,
-                        nowElapsedMillis = nowElapsedMillis,
-                        isFinished = isFinished,
-                        onPauseResume = onPauseResume,
-                        onAddTen = onAddTen,
-                        onCancel = onCancel,
-                    )
-                } else {
-                    ExpandedSetTimerBody(
-                        draft = draft,
-                        presets = presets,
-                        onDigits = onDigits,
-                        onBackspace = onBackspace,
-                        onResetDraft = onResetDraft,
-                        onPreset = onPreset,
-                        onEditPreset = onEditPreset,
-                        onStart = onStart,
-                    )
-                }
-            }
+    val body = modifier.fillMaxSize().padding(contentPadding)
+    if (timers.isNotEmpty()) {
+        CountdownTimers(
+            timers, nowElapsedMillis, presets, onPreset, onEditPreset, onPauseResume, onAddTen, onCancel,
+            modifier = body.padding(horizontal = 16.dp),
+            addTimerContent = { close ->
+                AddCountdownDialog(draft, onDigits, onBackspace, onResetDraft, close, onStart)
+            },
+        )
+    } else if (LocalAppWindowSizeInfo.current.isExpanded) {
+        Box(body, contentAlignment = Alignment.Center) {
+            ExpandedSetTimerBody(draft, presets, onDigits, onBackspace, onResetDraft, onPreset, onEditPreset) { onStart("") }
         }
     } else {
-        Column(
-            modifier = modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            BoxWithConstraints(
-                Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                // Use the same width-derived readout geometry as the setup body. Prefer
-                // room for a preset row; scroll rather than reduce targets below 60dp.
+        Column(body.padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
                 val readoutHeight = timerReadoutGeometry((maxWidth - 16.dp).coerceAtLeast(0.dp), formatTimer(draft)).capHeight + 24.dp
-                val presetSpace = 54.dp + 24.dp * LocalDensity.current.fontScale
-                val bodySpacing = 4.dp + 6.dp + 24.dp + 18.dp + 18.dp
-                val keyHeight = timerKeyHeight(maxHeight, readoutHeight, presetSpace, bodySpacing)
-                AnimatedContent(
-                    modifier = Modifier.verticalScroll(bodyScroll).graphicsLayer { clip = false },
-                    targetState = active,
-                    transitionSpec = {
-                        if (targetState) {
-                            slideInVertically(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = 420f,
-                                ),
-                                initialOffsetY = { it / 5 },
-                            ) + fadeIn(tween(220)) togetherWith
-                                (slideOutVertically(
-                                    animationSpec = tween(160),
-                                    targetOffsetY = { -it / 10 },
-                                ) + fadeOut(tween(140))) using SizeTransform(clip = false)
-                        } else {
-                            slideInVertically(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = 420f,
-                                ),
-                                initialOffsetY = { -it / 10 },
-                            ) + fadeIn(tween(220)) togetherWith
-                                (slideOutVertically(
-                                    animationSpec = tween(160),
-                                    targetOffsetY = { it / 5 },
-                                ) + fadeOut(tween(140))) using SizeTransform(clip = false)
-                        }
-                    },
-                    label = "timerBody",
-                ) { showingActive ->
-                    if (showingActive && timer != null) {
-                        RunningTimerBody(timer, nowElapsedMillis, isFinished)
-                    } else {
-                        SetTimerBody(
-                            keyHeight = keyHeight,
-                            draft = draft,
-                            presets = presets,
-                            onDigits = onDigits,
-                            onBackspace = onBackspace,
-                            onResetDraft = onResetDraft,
-                            onPreset = onPreset,
-                            onEditPreset = onEditPreset,
-                        )
-                    }
+                val presetSpace = 96.dp + 24.dp * LocalDensity.current.fontScale
+                val keyHeight = timerKeyHeight(maxHeight, readoutHeight, presetSpace, 70.dp)
+                Box(Modifier.verticalScroll(rememberScrollState())) {
+                    SetTimerBody(keyHeight, draft, presets, onDigits, onBackspace, onResetDraft, onPreset, onEditPreset)
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
-            TimerControls(
-                hasTimer = active,
-                running = running,
-                isFinished = isFinished,
-                onStart = onStart,
-                onPauseResume = onPauseResume,
-                onAddTen = onAddTen,
-                onCancel = onCancel,
-            )
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.width(170.dp).height(54.dp)) {
+                WidePill(
+                    text = "Start", icon = Icons.Rounded.PlayArrow, onClick = { onStart("") },
+                    container = MaterialTheme.colorScheme.primaryContainer,
+                    content = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fillWidth = true, height = 54.dp, compact = true, glow = false,
+                )
+            }
             Spacer(Modifier.height(10.dp))
         }
     }
+}
+
+@Composable
+private fun AddCountdownDialog(
+    draft: Duration,
+    onDigits: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onResetDraft: () -> Unit,
+    onClose: () -> Unit,
+    onStart: (String) -> Unit,
+) {
+    var name by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Add timer") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name, onValueChange = { name = it.take(40) }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Timer name") },
+                )
+                Text(formatTimer(draft), style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.align(Alignment.CenterHorizontally))
+                Keypad(keyHeight = 48.dp, onDigits = onDigits, onBackspace = onBackspace, onResetDraft = onResetDraft)
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = !draft.isZero, onClick = { onStart(name); onClose() }) { Text("Start") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onClose) { Text("Cancel") } },
+    )
 }
 
 private fun formatTimer(duration: Duration): String {
@@ -724,155 +608,6 @@ private fun ExpandedSetTimerBody(
 }
 
 @Composable
-private fun ExpandedRunningTimerBody(
-    timer: ClockTimer,
-    nowElapsedMillis: Long,
-    isFinished: Boolean = false,
-    onPauseResume: () -> Unit,
-    onAddTen: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    val remaining = if (isFinished) Duration.ZERO else timer.remaining(nowElapsedMillis)
-    val progress = if (isFinished) 1f else timer.fractionLeft(nowElapsedMillis).coerceIn(0f, 1f)
-    val primary = MaterialTheme.colorScheme.primary
-    val running = timer.state == TimerState.RUNNING && !isFinished
-
-    TwoPaneLayout(
-        leftPane = {
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                val circleSize = minOf(420.dp, maxWidth, maxHeight)
-                val readoutFit = minOf(1f, (circleSize.value - 32f).coerceAtLeast(1f) / 282f)
-                val surface = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f)
-                Box(
-                    modifier = Modifier
-                        .size(circleSize)
-                        .clip(CircleShape)
-                        .background(surface)
-                        .border(1.25.dp, MaterialTheme.colorScheme.outline.copy(alpha = .12f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ExpressiveTimerRing(
-                        progress = progress,
-                        color = primary,
-                        running = running || isFinished,
-                    )
-
-                    Column(Modifier.padding(horizontal = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        TickerTimerReadout(
-                            text = formatTimer(remaining),
-                            capHeight = 44.dp * readoutFit,
-                            scale = 0.98f,
-                            spacing = 0.5.dp,
-                            digitWidth = 42.dp * readoutFit,
-                            colonWidth = 12.dp * readoutFit,
-                            rollDirection = TimerRollDirection.DOWN,
-                            enableStagger = true,
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = if (isFinished) "TIME'S UP" else when (timer.state) {
-                                TimerState.PAUSED -> "PAUSED"
-                                TimerState.RUNNING -> "TIMER"
-                                else -> "READY"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isFinished) primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .65f),
-                            letterSpacing = 1.8.sp,
-                        )
-                    }
-                }
-            }
-        },
-        rightPane = {
-            ScrollPane(Modifier.padding(vertical = 12.dp, horizontal = 24.dp)) {
-                if (isFinished) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                    ) {
-                        WidePill(
-                            text = "Stop",
-                            icon = Icons.Rounded.Close,
-                            onClick = onCancel,
-                            container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f),
-                            content = MaterialTheme.colorScheme.onTertiaryContainer,
-                            height = 56.dp,
-                            compact = true,
-                            fillWidth = true,
-                            glow = false,
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                        ) {
-                            WidePill(
-                                text = if (running) "Pause" else "Resume",
-                                icon = if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                onClick = onPauseResume,
-                                height = 56.dp,
-                                compact = true,
-                                fillWidth = true,
-                                glow = false,
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                        ) {
-                            WidePill(
-                                text = "10s",
-                                icon = Icons.Rounded.Add,
-                                onClick = onAddTen,
-                                height = 56.dp,
-                                compact = true,
-                                fillWidth = true,
-                                glow = false,
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                        ) {
-                            WidePill(
-                                text = "Cancel",
-                                icon = Icons.Rounded.Close,
-                                onClick = onCancel,
-                                height = 56.dp,
-                                outlined = true,
-                                content = MaterialTheme.colorScheme.onSurface,
-                                compact = true,
-                                fillWidth = true,
-                                glow = false,
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        leftWeight = 1.1f,
-        rightWeight = 0.9f,
-        paneSpacing = 24.dp,
-        contentPaddingDp = 12.dp,
-    )
-}
-
-@Composable
 private fun SetTimerBody(
     keyHeight: Dp,
     draft: Duration,
@@ -934,7 +669,7 @@ private fun SetTimerBody(
 }
 
 @Composable
-private fun Presets(
+internal fun Presets(
     presets: List<Int>,
     onPreset: (Int) -> Unit,
     onEditPreset: (Int, Int) -> Unit,
@@ -1094,337 +829,3 @@ private fun KeyBox(
         content()
     }
 }
-
-@Composable
-private fun RunningTimerBody(
-    timer: ClockTimer,
-    nowElapsedMillis: Long,
-    isFinished: Boolean = false,
-) {
-    val remaining = if (isFinished) Duration.ZERO else timer.remaining(nowElapsedMillis)
-    val progress = if (isFinished) 1f else timer.fractionLeft(nowElapsedMillis).coerceIn(0f, 1f)
-    val size = 420.dp
-    val surface = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f)
-    val primary = MaterialTheme.colorScheme.primary
-
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        androidx.compose.foundation.layout.BoxWithConstraints {
-            val circleSize = minOf(maxWidth, size)
-            Box(
-                modifier = Modifier
-                    .size(circleSize)
-                    .clip(CircleShape)
-                    .background(surface)
-                    .border(1.25.dp, MaterialTheme.colorScheme.outline.copy(alpha = .12f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                ExpressiveTimerRing(progress = progress, color = primary, running = timer.state == TimerState.RUNNING || isFinished)
-
-                Column(Modifier.padding(horizontal = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    TickerTimerReadout(
-                        text = formatTimer(remaining),
-                        capHeight = 49.dp,
-                        scale = 0.98f,
-                        spacing = 0.5.dp,
-                        digitWidth = 47.dp,
-                        colonWidth = 13.dp,
-                        rollDirection = TimerRollDirection.DOWN,
-                        enableStagger = true,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = if (isFinished) "TIME'S UP" else when (timer.state) {
-                            TimerState.PAUSED -> "PAUSED"
-                            TimerState.RUNNING -> "TIMER"
-                            else -> "READY"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isFinished) primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .65f),
-                        letterSpacing = 1.8.sp,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Material Expressive-inspired organic progress ring. */
-@Composable
-private fun ExpressiveTimerRing(progress: Float, color: Color, running: Boolean) {
-    val phase = remember { Animatable(0f) }
-    val waveFraction by animateFloatAsState(
-        targetValue = if (running) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = 360f,
-        ),
-        label = "timerWaveAmount",
-    )
-
-    // Keep the phase moving only while running. When paused, the phase coroutine is cancelled
-    // but the wave amount eases smoothly back to a flat circle. Resuming reverses that transition.
-    LaunchedEffect(running) {
-        if (running) {
-            while (true) {
-                phase.animateTo(
-                    targetValue = phase.value + (Math.PI * 2).toFloat(),
-                    animationSpec = tween(5200, easing = LinearEasing),
-                )
-            }
-        }
-    }
-
-    Canvas(Modifier.fillMaxSize().padding(10.dp)) {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val baseRadius = (size.minDimension / 2f) - 14.dp.toPx()
-        val amplitude = 8.dp.toPx() * waveFraction
-        val activeSweep = 360f * progress
-
-        val backgroundPath = buildSquigglePath(
-            center = center,
-            radius = baseRadius,
-            startDegrees = 0f,
-            sweepDegrees = 360f,
-            amplitude = amplitude,
-            phase = phase.value,
-        )
-        val activePath = buildSquigglePath(
-            center = center,
-            radius = baseRadius,
-            startDegrees = 0f,
-            sweepDegrees = activeSweep,
-            amplitude = amplitude,
-            phase = phase.value,
-        )
-
-        drawPath(
-            path = backgroundPath,
-            color = color.copy(alpha = .10f),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = 11.dp.toPx(),
-                cap = StrokeCap.Round,
-            ),
-        )
-        if (progress > 0f) {
-            drawPath(
-                path = activePath,
-                color = color,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 11.dp.toPx(),
-                    cap = StrokeCap.Round,
-                ),
-            )
-        }
-    }
-}
-
-private fun buildSquigglePath(
-    center: Offset,
-    radius: Float,
-    startDegrees: Float,
-    sweepDegrees: Float,
-    amplitude: Float,
-    phase: Float,
-): Path {
-    val path = Path()
-    val steps = maxOf(96, (kotlin.math.abs(sweepDegrees) / 1.25f).toInt())
-
-    fun point(degrees: Float): Offset {
-        val angle = Math.toRadians((degrees - 90f).toDouble())
-        // Tight, expressive waves with several nearby frequencies so the outline feels organic
-        // without developing a visible seam.
-        val primary = kotlin.math.sin(angle * 16.0 + phase)
-        val secondary = kotlin.math.sin(angle * 11.0 - phase * 0.68) * 0.34
-        val tertiary = kotlin.math.sin(angle * 23.0 + phase * 1.30) * 0.13
-        val wave = amplitude * (primary + secondary + tertiary)
-        val r = radius + wave.toFloat()
-        return Offset(
-            center.x + kotlin.math.cos(angle).toFloat() * r,
-            center.y + kotlin.math.sin(angle).toFloat() * r,
-        )
-    }
-
-    for (i in 0..steps) {
-        val t = i / steps.toFloat()
-        val degrees = startDegrees + sweepDegrees * t
-        val p = point(degrees)
-        if (i == 0) {
-            path.moveTo(p.x, p.y)
-        } else {
-            val previousDegrees = startDegrees + sweepDegrees * ((i - 1) / steps.toFloat())
-            val previous = point(previousDegrees)
-            val midpoint = Offset((previous.x + p.x) / 2f, (previous.y + p.y) / 2f)
-            path.quadraticBezierTo(previous.x, previous.y, midpoint.x, midpoint.y)
-            if (i == steps) path.lineTo(p.x, p.y)
-        }
-    }
-    if (sweepDegrees >= 359f) path.close()
-    return path
-}
-
-@Composable
-private fun TimerControls(
-    hasTimer: Boolean,
-    running: Boolean,
-    isFinished: Boolean = false,
-    onStart: () -> Unit,
-    onPauseResume: () -> Unit,
-    onAddTen: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    if (isFinished) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(TIMER_ROW_HEIGHT)
-                .padding(horizontal = 20.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            WidePill(
-                text = "Stop",
-                icon = Icons.Rounded.Close,
-                onClick = onCancel,
-                container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.88f),
-                content = MaterialTheme.colorScheme.onTertiaryContainer,
-                height = TIMER_ROW_HEIGHT,
-                compact = true,
-                fillWidth = true,
-                glow = false,
-            )
-        }
-        return
-    }
-    // Intentionally mirrors the Stopwatch control morph so the Timer page uses the exact same
-    // expansion rhythm, spacing, and button choreography. The expanded row is simply Pause/Resume,
-    // Add ten seconds, Cancel instead of Lap/Reset/Stop.
-    val expanded = hasTimer
-    val expand by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-        label = "timerControlsExpand",
-    )
-    val label by animateFloatAsState(
-        targetValue = if (expanded) 0f else 1f,
-        animationSpec = tween(durationMillis = TIMER_LABEL_FADE_MS),
-        label = "timerControlsLabel",
-    )
-    val split by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = TIMER_SPLIT_MS,
-            delayMillis = if (expanded) TIMER_EXPAND_LEAD_MS else 0,
-        ),
-        label = "timerControlsSplit",
-    )
-    val e = expand.coerceIn(0f, 1f)
-
-    SubcomposeLayout(
-        Modifier.fillMaxWidth().height(TIMER_ROW_HEIGHT).padding(horizontal = 20.dp),
-    ) { constraints ->
-        val full = constraints.maxWidth
-        val h = TIMER_ROW_HEIGHT.roundToPx()
-
-        val rowWidth = subcompose("timerRowProbe") {
-            DigitRow(
-                part = "00",
-                capHeight = 66.dp,
-                color = MaterialTheme.colorScheme.primary,
-                separator = true,
-            )
-        }.first().measure(Constraints()).width
-
-        val natural = subcompose("timerStartProbe") {
-            WidePill(
-                text = "Start",
-                icon = Icons.Rounded.PlayArrow,
-                onClick = {},
-                height = TIMER_ROW_HEIGHT,
-                compact = true,
-                fillWidth = false,
-                contentPaddingH = 28.dp,
-                glow = false,
-            )
-        }.first().measure(Constraints(minHeight = h, maxHeight = h)).width
-
-        val collapsedW = maxOf(rowWidth - TIMER_ROW_INSET.roundToPx(), natural).coerceAtMost(full)
-        val collapsedX = ((full - collapsedW) / 2).coerceAtLeast(0)
-        val w = lerp(collapsedW, full, e)
-        val x = lerp(collapsedX, 0, e)
-
-        val single = if (split < 1f) {
-            subcompose("timerSingle") {
-                Box(Modifier.graphicsLayer { alpha = 1f - split }) {
-                    WidePill(
-                        text = "Start",
-                        icon = Icons.Rounded.PlayArrow,
-                        onClick = onStart,
-                        container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
-                        content = MaterialTheme.colorScheme.onPrimaryContainer,
-                        height = TIMER_ROW_HEIGHT,
-                        compact = true,
-                        contentPaddingH = 28.dp,
-                        contentAlpha = label,
-                        glow = false,
-                    )
-                }
-            }.first().measure(Constraints.fixed(w, h))
-        } else null
-
-        val trio = if (split > 0f) {
-            subcompose("timerTrio") {
-                Box(Modifier.graphicsLayer { alpha = split }) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(TIMER_GAP * split)) {
-                        Box(Modifier.weight(1f)) {
-                            WidePill(
-                                text = if (running) "Pause" else "Resume",
-                                icon = if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                onClick = onPauseResume,
-                                height = TIMER_ROW_HEIGHT,
-                                compact = true,
-                                glow = false,
-                            )
-                        }
-                        Box(Modifier.weight(1f)) {
-                            WidePill(
-                                text = "10s",
-                                icon = Icons.Rounded.Add,
-                                onClick = onAddTen,
-                                height = TIMER_ROW_HEIGHT,
-                                compact = true,
-                                glow = false,
-                            )
-                        }
-                        Box(Modifier.weight(1f)) {
-                            WidePill(
-                                text = "Cancel",
-                                icon = Icons.Rounded.Close,
-                                onClick = onCancel,
-                                height = TIMER_ROW_HEIGHT,
-                                outlined = true,
-                                content = MaterialTheme.colorScheme.onSurface,
-                                compact = true,
-                                glow = false,
-                            )
-                        }
-                    }
-                }
-            }.first().measure(Constraints.fixed(full, h))
-        } else null
-
-        layout(full, h) {
-            single?.place(x, 0)
-            trio?.place(0, 0)
-        }
-    }
-}
-
-private val TIMER_GAP = 6.dp
-private val TIMER_ROW_HEIGHT = 56.dp
-private val TIMER_ROW_INSET = 10.dp
-private const val TIMER_EXPAND_LEAD_MS = 95
-private const val TIMER_SPLIT_MS = 150
-private const val TIMER_LABEL_FADE_MS = 70
-

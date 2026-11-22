@@ -4,15 +4,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
-import com.wakr.app.core.withAddedSeconds
-import com.wakr.app.core.ClockTimer
 import com.wakr.app.core.finishAfterMission
 import com.wakr.app.core.finishUserOccurrence
 import com.wakr.app.core.finishEmergencyOccurrence
 import com.wakr.app.core.Alarm
 import com.wakr.app.core.Lap
 import com.wakr.app.core.Stopwatch
-import com.wakr.app.core.TimerState
 import com.wakr.app.data.ClockStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,13 +38,9 @@ class ClockActionReceiver : BroadcastReceiver() {
                     ACTION_SNOOZE, ACTION_DISMISS, ACTION_EMERGENCY -> finishRing(
                         app, id, intent.getLongExtra(UpcomingAlarm.AT, -1), intent.action.orEmpty(),
                     )
-                    ACTION_TIMER_TOGGLE -> timerToggle(app, store)
-                    ACTION_TIMER_ADD -> timerAdd(app, store)
-                    ACTION_TIMER_CANCEL -> {
-                        AlarmService.stop(app)
-                        store.putTimer(null)
-                        TimerScheduler.sync(app, null)
-                    }
+                    ACTION_TIMER_TOGGLE -> TimerRuntime.toggle(app, id)
+                    ACTION_TIMER_ADD -> TimerRuntime.add(app, id, 60)
+                    ACTION_TIMER_CANCEL -> TimerRuntime.cancel(app, id)
                     ACTION_SW_TOGGLE -> stopwatchToggle(app, store)
                     ACTION_SW_LAP -> stopwatchLap(app, store)
                     ACTION_SW_RESET -> {
@@ -59,24 +52,6 @@ class ClockActionReceiver : BroadcastReceiver() {
                 pending.finish()
             }
         }
-    }
-
-    private suspend fun timerToggle(context: Context, store: ClockStore) {
-        val t = store.timerNow() ?: return
-        val now = SystemClock.elapsedRealtime()
-        val next = when (t.state) {
-            TimerState.RUNNING -> t.copy(state = TimerState.PAUSED, pausedRemaining = t.remaining(now))
-            else -> t.copy(state = TimerState.RUNNING, deadlineElapsedMillis = now + t.pausedRemaining.toMillis())
-        }
-        store.putTimer(next)
-        TimerScheduler.sync(context, next)
-    }
-
-    private suspend fun timerAdd(context: Context, store: ClockStore) {
-        val t = store.timerNow() ?: return
-        val next = t.withAddedSeconds(60)
-        store.putTimer(next)
-        TimerScheduler.sync(context, next)
     }
 
     private suspend fun stopwatchToggle(context: Context, store: ClockStore) {

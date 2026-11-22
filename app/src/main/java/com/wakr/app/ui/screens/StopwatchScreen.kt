@@ -485,9 +485,6 @@ private fun StopwatchFace(elapsedMillis: Long, running: Boolean, onToggle: () ->
     val hundredths = ((safeMillis % 1000L) / 10L).toInt()
     val minutes = (safeMillis / 60000L).toInt()
     val seconds = ((safeMillis / 1000L) % 60L).toInt()
-    val primary = MaterialTheme.colorScheme.primary
-    val onSurface = MaterialTheme.colorScheme.onSurface
-
     // Fluid hand rotation with smooth reset animation
     val currentTurnFraction = ((safeMillis % 60000L) / 60000f)
     val handTurnAnim = remember { Animatable(currentTurnFraction) }
@@ -528,71 +525,7 @@ private fun StopwatchFace(elapsedMillis: Long, running: Boolean, onToggle: () ->
         }
     }
 
-    val positiveTurns = (handTurnAnim.value % 1f + 1f) % 1f
-    val secondAngle = positiveTurns * (2f * Math.PI.toFloat())
-
-    Box(
-        modifier = Modifier
-            .size(STOPWATCH_FACE_SIZE)
-            .clockLighting(primary, MaterialTheme.colorScheme.surface.luminance() < .5f)
-            .luminousElasticClickable(
-                shape = CircleShape,
-                maxStretchPercent = 0.04f,
-                maxTranslateDp = 2.0.dp,
-                luminousRadiusScale = 0.58f,
-                onClick = onToggle,
-            )
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .96f), CircleShape)
-            .border(1.25.dp, MaterialTheme.colorScheme.outline.copy(alpha = .12f), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(Modifier.matchParentSize().padding(22.dp)) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val radius = size.minDimension / 2f
-
-            // A restrained 60-mark track, with the quarter marks slightly heavier.
-            for (i in 0 until 60) {
-                val angle = i / 60f * (2f * Math.PI.toFloat()) - Math.PI.toFloat() / 2f
-                val outer = radius - if (i % 5 == 0) 5.dp.toPx() else 2.dp.toPx()
-                val inner = radius - if (i % 5 == 0) 15.dp.toPx() else 8.dp.toPx()
-                val p1 = Offset(center.x + kotlin.math.cos(angle) * inner, center.y + kotlin.math.sin(angle) * inner)
-                val p2 = Offset(center.x + kotlin.math.cos(angle) * outer, center.y + kotlin.math.sin(angle) * outer)
-                drawLine(
-                    color = if (i % 5 == 0) primary.copy(alpha = .65f) else onSurface.copy(alpha = .16f),
-                    start = p1,
-                    end = p2,
-                    strokeWidth = if (i % 5 == 0) 2.dp.toPx() else 1.2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
-
-            val handLength = radius - 28.dp.toPx()
-            val handAngle = secondAngle - Math.PI.toFloat() / 2f
-            val tip = Offset(center.x + kotlin.math.cos(handAngle) * handLength, center.y + kotlin.math.sin(handAngle) * handLength)
-
-            // Radial gradient so the hand fades out underneath the central readout text
-            val innerCutoff = 72.dp.toPx()
-            val fadeRange = 20.dp.toPx()
-            val handBrush = Brush.radialGradient(
-                0.0f to Color.Transparent,
-                (innerCutoff / handLength).coerceIn(0f, 1f) to Color.Transparent,
-                ((innerCutoff + fadeRange) / handLength).coerceIn(0f, 1f) to primary,
-                1.0f to primary,
-                center = center,
-                radius = handLength,
-            )
-
-            drawLine(
-                brush = handBrush,
-                start = center,
-                end = tip,
-                strokeWidth = 2.5.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-            drawCircle(primary, 5.dp.toPx(), tip)
-        }
-
+    StopwatchDial(Modifier.size(STOPWATCH_FACE_SIZE), { handTurnAnim.value }, onToggle) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -622,6 +555,71 @@ private fun StopwatchFace(elapsedMillis: Long, running: Boolean, onToggle: () ->
         }
     }
 }
+
+/** The dial frame and hand are shared by stopwatch and countdowns; only their direction differs. */
+@Composable
+internal fun StopwatchDial(
+    modifier: Modifier,
+    turns: () -> Float,
+    onClick: () -> Unit,
+    selected: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .clockLighting(colors.primary, colors.surface.luminance() < .5f)
+            .luminousElasticClickable(
+                shape = CircleShape,
+                maxStretchPercent = 0.04f,
+                maxTranslateDp = 2.0.dp,
+                luminousRadiusScale = 0.58f,
+                onClick = onClick,
+            )
+            .clip(CircleShape)
+            .background(colors.surfaceContainerLow.copy(alpha = .96f), CircleShape)
+            .border(1.25.dp, colors.outline.copy(alpha = if (selected) .58f else .12f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val scale = size.minDimension / 410f
+            val radius = size.minDimension / 2f - 22f * scale
+            for (i in 0 until 60) {
+                val angle = i / 60f * (2f * Math.PI.toFloat()) - Math.PI.toFloat() / 2f
+                val major = i % 5 == 0
+                val outer = radius - (if (major) 5 else 2) * scale
+                val inner = radius - (if (major) 15 else 8) * scale
+                val p1 = Offset(center.x + kotlin.math.cos(angle) * inner, center.y + kotlin.math.sin(angle) * inner)
+                val p2 = Offset(center.x + kotlin.math.cos(angle) * outer, center.y + kotlin.math.sin(angle) * outer)
+                drawLine(
+                    color = if (major) colors.primary.copy(alpha = .65f) else colors.onSurface.copy(alpha = .16f),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = (if (major) 2f else 1.2f) * scale,
+                    cap = StrokeCap.Round,
+                )
+            }
+
+            val handLength = radius - 28f * scale
+            if (handLength <= 0f) return@Canvas
+            val handAngle = turns() * (2f * Math.PI.toFloat()) - Math.PI.toFloat() / 2f
+            val tip = Offset(center.x + kotlin.math.cos(handAngle) * handLength, center.y + kotlin.math.sin(handAngle) * handLength)
+            val brush = Brush.radialGradient(
+                0f to Color.Transparent,
+                (72f * scale / handLength) to Color.Transparent,
+                (92f * scale / handLength) to colors.primary,
+                1f to colors.primary,
+                center = center,
+                radius = handLength,
+            )
+            drawLine(brush, center, tip, 2.5f * scale, StrokeCap.Round)
+            drawCircle(colors.primary, 5f * scale, tip)
+        }
+        content()
+    }
+}
+
 
 private val STOPWATCH_FACE_SIZE = 410.dp
 

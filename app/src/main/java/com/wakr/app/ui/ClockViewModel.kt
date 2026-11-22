@@ -14,15 +14,12 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wakr.app.alarm.AlarmScheduler
-import com.wakr.app.alarm.AlarmService
 import com.wakr.app.alarm.Notifications
-import com.wakr.app.alarm.TimerScheduler
+import com.wakr.app.alarm.TimerRuntime
 import com.wakr.app.core.Alarm
-import com.wakr.app.core.withAddedSeconds
 import com.wakr.app.core.ClockTimer
 import com.wakr.app.core.Lap
 import com.wakr.app.core.Stopwatch
-import com.wakr.app.core.TimerState
 import com.wakr.app.core.WorldCity
 import com.wakr.app.core.preservingDismissal
 import com.wakr.app.data.ClockSettings
@@ -106,8 +103,8 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     val wakeHistory = store.wakeHistory
     val cities: StateFlow<List<WorldCity>> =
         store.cities.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    val timer: StateFlow<ClockTimer?> =
-        store.timer.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val timers: StateFlow<List<ClockTimer>> =
+        store.timers.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _stopwatch = MutableStateFlow(Stopwatch())
     val stopwatch: StateFlow<Stopwatch> = _stopwatch.asStateFlow()
 
@@ -132,6 +129,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             Notifications.ensureChannels(ctx)
             AlarmScheduler.scheduleAll(ctx, com.wakr.app.alarm.RuntimeAlarms.read(ctx))
+            TimerRuntime.restore(ctx)
         }
     }
 
@@ -293,17 +291,12 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Select one of the quick timer presets shown beneath the keypad and start it immediately. */
-    fun setTimerPreset(totalSeconds: Int, label: String = "Timer") {
-        if (totalSeconds <= 0) {
-            timerDigits = ""
-            return
+    fun setTimerPreset(totalSeconds: Int) {
+        if (totalSeconds <= 0) return
+        viewModelScope.launch {
+            val seconds = totalSeconds.coerceAtMost(99 * 3600 + 59 * 60 + 59)
+            if (TimerRuntime.start(ctx, Duration.ofSeconds(seconds.toLong()), "")) timerDigits = ""
         }
-        val total = totalSeconds.coerceAtMost(99 * 3600 + 59 * 60 + 59)
-        val hours = total / 3600
-        val minutes = (total % 3600) / 60
-        val seconds = total % 60
-        timerDigits = "%02d%02d%02d".format(hours, minutes, seconds).trimStart('0')
-        startTimer(label)
     }
 
     /** The winder. Sets whole minutes, which is what a spring-wound dial can actually express. */
@@ -311,45 +304,16 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         timerDigits = if (minutes <= 0) "" else "%d%02d00".format(minutes / 60, minutes % 60).trimStart('0')
     }
 
-    fun startTimer(label: String = "Timer") = viewModelScope.launch {
-        val total = draftDuration
-        if (total.isZero) return@launch
-        val t = ClockTimer(
-            id = store.nextId(),
-            label = label,
-            total = total,
-            state = TimerState.RUNNING,
-            deadlineElapsedMillis = SystemClock.elapsedRealtime() + total.toMillis(),
-        )
-        timerDigits = ""
-        store.putTimer(t)
-        TimerScheduler.sync(ctx, t)
+    fun startTimer(label: String = "") = viewModelScope.launch {
+        val duration = draftDuration
+        if (TimerRuntime.start(ctx, duration, label)) timerDigits = ""
     }
 
-    fun pauseOrResumeTimer() = viewModelScope.launch {
-        val t = store.timerNow() ?: return@launch
-        val now = SystemClock.elapsedRealtime()
-        val next = when (t.state) {
-            TimerState.RUNNING -> t.copy(state = TimerState.PAUSED, pausedRemaining = t.remaining(now))
-            else -> t.copy(state = TimerState.RUNNING, deadlineElapsedMillis = now + t.pausedRemaining.toMillis())
-        }
-        store.putTimer(next)
-        TimerScheduler.sync(ctx, next)
-    }
+    fun pauseOrResumeTimer(id: Long) = viewModelScope.launch { TimerRuntime.toggle(ctx, id) }
 
-    /** Add ten seconds to the elapsed-realtime deadline; overlay/notification add a minute. */
-    fun addTenSeconds() = viewModelScope.launch {
-        val t = store.timerNow() ?: return@launch
-        val next = t.withAddedSeconds(10)
-        store.putTimer(next)
-        TimerScheduler.sync(ctx, next)
-    }
+    fun addTenSeconds(id: Long) = viewModelScope.launch { TimerRuntime.add(ctx, id, 10) }
 
-    fun cancelTimer() = viewModelScope.launch {
-        AlarmService.stop(ctx)
-        store.putTimer(null)
-        TimerScheduler.sync(ctx, null)
-    }
+    fun cancelTimer(id: Long) = viewModelScope.launch { TimerRuntime.cancel(ctx, id) }
 
     /* ── Stopwatch ──────────────────────────────────────────────────────────────────────────── */
 

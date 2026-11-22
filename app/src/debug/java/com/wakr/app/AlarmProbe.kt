@@ -209,16 +209,16 @@ class AlarmProbe : Instrumentation() {
                         report.putString("ringingNotificationDismiss", "SKIP: notification permission denied")
                     }
                     kotlinx.coroutines.delay(300)
-                    if (store.timerNow() == null) {
+                    if (store.timersNow().isEmpty()) {
                         ownsTimer = true
                         val timer=com.wakr.app.core.ClockTimer(id,"ADB timer regression",Duration.ofSeconds(3),
                             com.wakr.app.core.TimerState.RUNNING,android.os.SystemClock.elapsedRealtime()+3000)
-                        store.putTimer(timer)
-                        TimerScheduler.sync(context,timer)
+                        store.updateTimers { it + timer }
+                        TimerScheduler.sync(context, timer.id, timer)
                         repeat(80) {
-                            if (store.timerNow()?.state != com.wakr.app.core.TimerState.FINISHED) kotlinx.coroutines.delay(100)
+                            if (store.timersNow().find { it.id == id }?.state != com.wakr.app.core.TimerState.FINISHED) kotlinx.coroutines.delay(100)
                         }
-                        check(store.timerNow()?.state==com.wakr.app.core.TimerState.FINISHED) { "Timer callback did not finish" }
+                        check(store.timersNow().find { it.id == id }?.state==com.wakr.app.core.TimerState.FINISHED) { "Timer callback did not finish" }
                         kotlinx.coroutines.delay(500)
                         @Suppress("DEPRECATION")
                         val services=context.getSystemService(android.app.ActivityManager::class.java).getRunningServices(100)
@@ -245,7 +245,7 @@ class AlarmProbe : Instrumentation() {
             }
             customUri?.let { context.contentResolver.delete(it,null,null) }
             if (ownsTimer) runBlocking {
-                if (store.timerNow()?.id == id) { store.putTimer(null); TimerScheduler.sync(context,null) }
+                com.wakr.app.alarm.TimerRuntime.cancel(context, id)
             }
             if (id>=0) runBlocking {
                 AlarmScheduler.cancel(context,id)

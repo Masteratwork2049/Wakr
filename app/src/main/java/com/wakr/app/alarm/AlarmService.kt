@@ -73,6 +73,7 @@ class AlarmService : Service() {
     private val starts = Mutex()
     private var active = false
     private var occurrence: Pair<Long, Long>? = null
+    private var timerChimeId: Long? = null
     private var torchId: String? = null
     private var silenceJob: Job? = null
     private var effectsJob: Job? = null
@@ -109,6 +110,7 @@ class AlarmService : Service() {
                 stopPreview?.invoke()
                 resetMute()
                 muteOptions = alarm.wake
+                timerChimeId = null
                 occurrence = id to at
                 current = this@AlarmService
                 val uri = alarmRingtone(this@AlarmService, alarm, at)
@@ -124,20 +126,31 @@ class AlarmService : Service() {
     private fun startTimerChime(startId: Int) {
         scope.launch {
             starts.withLock {
-                val store = ClockStore(this@AlarmService)
-                if (store.timerNow()?.state != com.wakr.app.core.TimerState.FINISHED) {
-                    if (!active) stopSelf(startId)
-                    return@launch
-                }
-                val settings = store.settingsNow()
-                stopPreview?.invoke()
-                resetMute()
-                occurrence = null
-                stopEffects()
-                ring(timerNotification(this@AlarmService), settings.timers.soundUri,
-                    settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
+                if (occurrence != null && active) return@withLock
+                playNextTimerOrStop(startId)
             }
         }
+    }
+
+    private suspend fun playNextTimerOrStop(startId: Int? = null) {
+        val pending = if (RuntimeAlarms.unlocked(this)) ClockStore(this).timersNow().filter { it.chimePending }
+        else emptyList()
+        if (active && pending.any { it.id == timerChimeId }) return
+        val next = pending.minByOrNull { it.deadlineElapsedMillis }
+        if (next == null) {
+            active = false
+            if (startId == null) stopSelf() else stopSelf(startId)
+            return
+        }
+        val settings = ClockStore(this).settingsNow()
+        stopPreview?.invoke()
+        resetMute()
+        occurrence = null
+        timerChimeId = next.id
+        current = this
+        stopEffects()
+        ring(Notifications.timerChimeSummary(this, next), settings.timers.soundUri,
+            settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
     }
 
     private fun ring(notification: android.app.Notification, uri: String?, shouldVibrate: Boolean,
@@ -154,23 +167,28 @@ class AlarmService : Service() {
             if (silenceMinutes <= 0) return@launch
             delay(silenceMinutes * 60_000L)
             val token = occurrence
-            if (token != null) starts.withLock {
-                if (occurrence != token) return@launch
-                var before: Alarm? = null
-                val alarms = RuntimeAlarms.update(this@AlarmService) { list -> list.map { alarm ->
-                    if (alarm.id == token.first && alarm.ringingAt == token.second) {
-                        before = alarm
-                        alarm.missOccurrence(token.second, System.currentTimeMillis())
-                    } else alarm
-                } }
-                alarms.firstOrNull { it.id == token.first }?.let { AlarmScheduler.schedule(this@AlarmService, it) }
-                before?.takeUnless { it.isWakeCheckRetry }?.let { missed ->
-                    if (RuntimeAlarms.unlocked(this@AlarmService)) {
-                        ClockStore(this@AlarmService).putWakeLog(WakeChecks.log(missed, token.second, null, WakeOutcome.MISSED))
+            val timerId = timerChimeId
+            if (timerId != null) TimerRuntime.silence(this@AlarmService, timerId)
+            starts.withLock {
+                if (occurrence != token || timerChimeId != timerId) return@launch
+                if (token != null) {
+                    var before: Alarm? = null
+                    val alarms = RuntimeAlarms.update(this@AlarmService) { list -> list.map { alarm ->
+                        if (alarm.id == token.first && alarm.ringingAt == token.second) {
+                            before = alarm
+                            alarm.missOccurrence(token.second, System.currentTimeMillis())
+                        } else alarm
+                    } }
+                    alarms.firstOrNull { it.id == token.first }?.let { AlarmScheduler.schedule(this@AlarmService, it) }
+                    before?.takeUnless { it.isWakeCheckRetry }?.let { missed ->
+                        if (RuntimeAlarms.unlocked(this@AlarmService)) {
+                            ClockStore(this@AlarmService).putWakeLog(WakeChecks.log(missed, token.second, null, WakeOutcome.MISSED))
+                        }
                     }
                 }
+                occurrence = null
+                playNextTimerOrStop()
             }
-            stopSelf()
         }
     }
 
@@ -351,7 +369,22 @@ class AlarmService : Service() {
         }
 
         suspend fun stopOccurrence(id: Long, at: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
-            current?.takeIf { it.occurrence == (id to at) }?.stopSelf()
+            val service = current ?: return@withContext
+            service.starts.withLock {
+                if (service.occurrence != (id to at)) return@withLock
+                service.occurrence = null
+                service.playNextTimerOrStop()
+            }
+        }
+
+        internal suspend fun refreshTimerChime(id: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+            val service = current ?: return@withContext
+            service.scope.launch {
+                service.starts.withLock {
+                    if (service.occurrence == null && service.timerChimeId == id) service.playNextTimerOrStop()
+                }
+            }
+            Unit
         }
 
         const val ACTION_START = "com.wakr.app.RING"
@@ -402,19 +435,7 @@ class AlarmService : Service() {
                 }.build()
         }
 
-        private fun timerNotification(context: Context) =
-            NotificationCompat.Builder(context, Notifications.CHANNEL_ALARM)
-                .setSmallIcon(R.drawable.ic_stat_timer)
-                .setContentTitle("Timer")
-                .setContentText("Time's up")
-                .setDeleteIntent(Notifications.broadcast(context, ClockActionReceiver.ACTION_TIMER_CANCEL, 25))
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setOngoing(true)
-                .setContentIntent(Notifications.openApp(context, Notifications.TAB_TIMERS))
-                .addAction(0, "Stop", Notifications.broadcast(context, ClockActionReceiver.ACTION_TIMER_CANCEL, 24))
-                .build()
+
     }
 }
 

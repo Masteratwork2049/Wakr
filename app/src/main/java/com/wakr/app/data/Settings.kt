@@ -44,7 +44,10 @@ data class TimerSettings(
     val presets: List<Int> = DEFAULT_TIMER_PRESETS,
 )
 
-val DEFAULT_TIMER_PRESETS: List<Int> = listOf(60, 120, 300, 600)
+val DEFAULT_TIMER_PRESETS: List<Int> = listOf(60, 120, 300, 600, 900, 1800)
+
+internal fun normalizedTimerPresets(presets: List<Int>): List<Int> =
+    DEFAULT_TIMER_PRESETS.mapIndexed { index, default -> presets.getOrNull(index)?.takeIf { it > 0 } ?: default }
 const val SILENT = "silent"
 
 fun formatPresetLabel(seconds: Int): String = when {

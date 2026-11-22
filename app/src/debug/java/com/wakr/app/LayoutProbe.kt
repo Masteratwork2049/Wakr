@@ -8,6 +8,8 @@ import com.wakr.app.alarm.Notifications
 import com.wakr.app.alarm.TimerScheduler
 import com.wakr.app.core.*
 import com.wakr.app.data.ClockStore
+import com.wakr.app.data.toClockTimer
+import com.wakr.app.data.toTimerJson
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -25,13 +27,19 @@ class LayoutProbe : Instrumentation() {
                 val ctx = targetContext
                 val store = ClockStore(ctx)
                 val backup = java.io.File(ctx.filesDir, "layout-probe-snapshot.json")
-                fun timerJson(t: ClockTimer) = JSONObject().put("id", t.id).put("label", t.label).put("total", t.total.toMillis())
-                    .put("state", t.state.name).put("deadline", t.deadlineElapsedMillis).put("remaining", t.pausedRemaining.toMillis())
+                suspend fun replaceTimers(timers: List<ClockTimer>) {
+                    val previous = store.timersNow()
+                    store.updateTimers { timers }
+                    previous.filterNot { old -> timers.any { it.id == old.id } }.forEach {
+                        TimerScheduler.sync(ctx, it.id, null)
+                    }
+                    timers.forEach { TimerScheduler.sync(ctx, it.id, it) }
+                }
                 val command = args.getString("command") ?: "status"
                 if (command in listOf("timer", "stopwatch")) {
                     if (!backup.exists()) {
                         val sw = store.stopwatch.first()
-                        val snapshot = JSONObject().put("timer", store.timerNow()?.let(::timerJson) ?: JSONObject.NULL)
+                        val snapshot = JSONObject().put("timers", JSONArray().apply { store.timersNow().forEach { put(it.toTimerJson()) } })
                             .put("running", sw.running).put("started", sw.startedAtElapsed).put("accumulated", sw.accumulated.toMillis())
                             .put("laps", JSONArray().apply { sw.laps.forEach { put(JSONObject().put("index", it.index).put("split", it.split.toMillis()).put("total", it.total.toMillis())) } })
                         backup.writeText(snapshot.toString())
@@ -40,22 +48,25 @@ class LayoutProbe : Instrumentation() {
                     val duration = Duration.ofSeconds(seconds)
                     val timer = if (command == "timer") ClockTimer(-17017, "ADB layout probe", duration, TimerState.RUNNING,
                         SystemClock.elapsedRealtime() + duration.toMillis()) else null
-                    store.putTimer(timer); TimerScheduler.sync(ctx, timer)
+                    replaceTimers(listOfNotNull(timer))
                     val sw = if (command == "stopwatch") Stopwatch(true, SystemClock.elapsedRealtime(), duration) else Stopwatch()
                     store.putStopwatch(sw)
                     if (sw.running) Notifications.showStopwatch(ctx, sw) else Notifications.hideStopwatch(ctx)
                 } else if (command == "restore" && backup.exists()) {
                     val j = JSONObject(backup.readText())
-                    val t = j.optJSONObject("timer")?.let { ClockTimer(it.getLong("id"), it.getString("label"), Duration.ofMillis(it.getLong("total")),
-                        TimerState.valueOf(it.getString("state")), it.getLong("deadline"), Duration.ofMillis(it.getLong("remaining"))) }
+                    val timers = j.optJSONArray("timers")?.let { rows ->
+                        List(rows.length()) { rows.getJSONObject(it).toClockTimer() }
+                    } ?: listOfNotNull(j.optJSONObject("timer")?.let {
+                        it.put("paused", it.getLong("remaining")).toClockTimer()
+                    })
                     val laps = j.getJSONArray("laps")
                     val sw = Stopwatch(j.getBoolean("running"), j.getLong("started"), Duration.ofMillis(j.getLong("accumulated")),
                         (0 until laps.length()).map { laps.getJSONObject(it).let { Lap(it.getInt("index"), Duration.ofMillis(it.getLong("split")), Duration.ofMillis(it.getLong("total"))) } })
-                    store.putTimer(t); TimerScheduler.sync(ctx, t); store.putStopwatch(sw)
+                    replaceTimers(timers); store.putStopwatch(sw)
                     if (sw.running || !sw.accumulated.isZero) Notifications.showStopwatch(ctx, sw) else Notifications.hideStopwatch(ctx)
                     check(backup.delete())
                 }
-                result.putString("stream", "timer=${store.timerNow()}\nstopwatch=${store.stopwatch.first()}\n")
+                result.putString("stream", "timer=${store.timersNow()}\nstopwatch=${store.stopwatch.first()}\n")
             }
             finish(Activity.RESULT_OK, result)
         } catch (error: Throwable) { result.putString("stream", error.stackTraceToString()); finish(Activity.RESULT_CANCELED, result) }

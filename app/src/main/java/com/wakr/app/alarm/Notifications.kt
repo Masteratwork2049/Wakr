@@ -78,6 +78,10 @@ object Notifications {
     /* ── Timer ──────────────────────────────────────────────────────────────────────────────── */
 
     fun showTimer(context: Context, timer: ClockTimer) {
+        if (timer.state == TimerState.FINISHED) {
+            post(context, ID_TIMER, finishedTimer(context, timer), tag = timerTag(timer.id))
+            return
+        }
         val running = timer.state == TimerState.RUNNING
         val b = NotificationCompat.Builder(context, CHANNEL_TIMER)
             .setSmallIcon(R.drawable.ic_stat_timer)
@@ -90,10 +94,10 @@ object Notifications {
             .addAction(
                 0,
                 if (running) "Pause" else "Resume",
-                broadcast(context, ClockActionReceiver.ACTION_TIMER_TOGGLE, 20),
+                timerAction(context, ClockActionReceiver.ACTION_TIMER_TOGGLE, timer.id),
             )
-            .addAction(0, "+1 min", broadcast(context, ClockActionReceiver.ACTION_TIMER_ADD, 21))
-            .addAction(0, "Cancel", broadcast(context, ClockActionReceiver.ACTION_TIMER_CANCEL, 22))
+            .addAction(0, "+1 min", timerAction(context, ClockActionReceiver.ACTION_TIMER_ADD, timer.id))
+            .addAction(0, "Cancel", timerAction(context, ClockActionReceiver.ACTION_TIMER_CANCEL, timer.id))
 
         if (running) {
             // The platform ticks this. `when` is the moment it reaches zero.
@@ -106,10 +110,53 @@ object Notifications {
                 .setShowWhen(false)
                 .setContentText("Paused · ${timer.pausedRemaining.clockFormat()}")
         }
-        post(context, ID_TIMER, b.build())
+        post(context, ID_TIMER, b.build(), tag = timerTag(timer.id))
     }
 
-    fun hideTimer(context: Context) {
+    private fun finishedTimer(context: Context, timer: ClockTimer): android.app.Notification {
+        val stop = timerAction(context, ClockActionReceiver.ACTION_TIMER_CANCEL, timer.id)
+        return NotificationCompat.Builder(context, CHANNEL_ALARM)
+            .setSmallIcon(R.drawable.ic_stat_timer)
+            .setContentTitle(timer.label)
+            .setContentText("Time’s up")
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setGroup("timer-alerts")
+            .setOnlyAlertOnce(true)
+            .setDeleteIntent(stop)
+            .setContentIntent(openApp(context, TAB_TIMERS))
+            .addAction(0, "Dismiss", stop)
+            .build()
+    }
+
+    internal fun timerChimeSummary(context: Context, timer: ClockTimer): android.app.Notification =
+        NotificationCompat.Builder(context, CHANNEL_ALARM)
+            .setSmallIcon(R.drawable.ic_stat_timer)
+            .setContentTitle(timer.label)
+            .setContentText("Time’s up")
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setGroup("timer-alerts")
+            .setGroupSummary(true)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setContentIntent(openApp(context, TAB_TIMERS))
+            .addAction(0, "Dismiss", timerAction(context, ClockActionReceiver.ACTION_TIMER_CANCEL, timer.id))
+            .build()
+
+    internal fun timerAction(context: Context, action: String, id: Long): PendingIntent =
+        PendingIntent.getBroadcast(context, 20,
+            Intent(context, ClockActionReceiver::class.java).setAction(action)
+                .setData(android.net.Uri.parse("wakr://timer/$id")).putExtra(AlarmReceiver.EXTRA_ID, id),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    private fun timerTag(id: Long) = "timer-$id"
+
+    fun hideTimer(context: Context, id: Long) {
+        NotificationManagerCompat.from(context).cancel(timerTag(id), ID_TIMER)
+    }
+
+    fun hideLegacyTimer(context: Context) {
         NotificationManagerCompat.from(context).cancel(ID_TIMER)
     }
 
@@ -190,10 +237,10 @@ object Notifications {
      * Checking here once is cheaper than a try/catch at every call site and it fails the way it
      * should: the alarm still rings, it is just not announced.
      */
-    private fun post(context: Context, id: Int, n: android.app.Notification) {
+    private fun post(context: Context, id: Int, n: android.app.Notification, tag: String? = null) {
         val nm = NotificationManagerCompat.from(context)
         if (!nm.areNotificationsEnabled()) return
-        try { nm.notify(id, n) }
+        try { nm.notify(tag, id, n) }
         catch (_: SecurityException) { /* Permission may be revoked between check and post. */ }
         catch (error: RuntimeException) { android.util.Log.w("ClockNotification", "Unable to post notification", error) }
     }

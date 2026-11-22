@@ -3,7 +3,6 @@ package com.wakr.app.alarm
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.wakr.app.data.ClockStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,9 +48,6 @@ class BootReceiver : BroadcastReceiver() {
         alarms.filter { it.id in recover }.forEach { AlarmScheduler.recoverRinging(context, it) }
         if (!RuntimeAlarms.unlocked(context)) return
         WakeChecks.restore(context)
-        val store = ClockStore(context)
-        // A reboot resets elapsedRealtime, so any stored deadline is meaningless. Rebuild the
-        // timer's notification from what survived and let the store's own clamp decide.
-        store.timerNow()?.let { TimerScheduler.sync(context, it) }
+        TimerRuntime.restore(context)
     }
 }

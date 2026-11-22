@@ -93,7 +93,7 @@ class ClockStore internal constructor(private val prefs: DataStore<Preferences>)
     val cities: Flow<List<WorldCity>> = prefs.data.map { p ->
         p[KEY_CITIES]?.let(::parseCities) ?: SEED_CITIES
     }
-    val timer: Flow<ClockTimer?> = prefs.data.map { p -> p[KEY_TIMER]?.let(::parseTimer) }
+    val timers: Flow<List<ClockTimer>> = prefs.data.map { it.readTimers() }.distinctUntilChanged()
     val stopwatch: Flow<Stopwatch> = prefs.data.map { p ->
         p[KEY_STOPWATCH]?.let(::parseStopwatch) ?: Stopwatch()
     }
@@ -101,7 +101,7 @@ class ClockStore internal constructor(private val prefs: DataStore<Preferences>)
     /** A one-shot read, for the receivers and services that have no scope to collect in. */
     suspend fun settingsNow(): ClockSettings = settings.first()
     suspend fun alarmsNow(): List<Alarm> = alarms.first()
-    suspend fun timerNow(): ClockTimer? = timer.first()
+    suspend fun timersNow(): List<ClockTimer> = timers.first()
 
     suspend fun putAlarms(list: List<Alarm>) {
         prefs.edit { it[KEY_ALARMS] = encodeAlarms(list) }
@@ -127,8 +127,20 @@ class ClockStore internal constructor(private val prefs: DataStore<Preferences>)
         }
     }
 
-    suspend fun putTimer(t: ClockTimer?) {
-        prefs.edit { p -> if (t == null) p.remove(KEY_TIMER) else p[KEY_TIMER] = encodeTimer(t) }
+    private fun Preferences.readTimers(): List<ClockTimer> {
+        val raw = this[KEY_TIMERS]
+        return if (raw == null) listOfNotNull(this[KEY_TIMER]?.let(::parseTimer))
+        else runCatching { JSONArray(raw).records(JSONObject::toClockTimer) }.getOrDefault(emptyList())
+    }
+
+    suspend fun updateTimers(transform: (List<ClockTimer>) -> List<ClockTimer>): List<ClockTimer> {
+        var result = emptyList<ClockTimer>()
+        prefs.edit { p ->
+            result = transform(p.readTimers())
+            p[KEY_TIMERS] = JSONArray().apply { result.forEach { put(it.toTimerJson()) } }.toString()
+            p.remove(KEY_TIMER)
+        }
+        return result
     }
 
     suspend fun putStopwatch(s: Stopwatch) {
@@ -212,6 +224,7 @@ class ClockStore internal constructor(private val prefs: DataStore<Preferences>)
         val KEY_HISTORY = stringPreferencesKey("wakeHistory")
         val KEY_CITIES = stringPreferencesKey("cities")
         val KEY_TIMER = stringPreferencesKey("timer")
+        val KEY_TIMERS = stringPreferencesKey("timers")
         val KEY_STOPWATCH = stringPreferencesKey("stopwatch")
         val KEY_NEXT_ID = longPreferencesKey("nextId")
 
@@ -264,11 +277,9 @@ internal fun Preferences.toSettings() = ClockSettings(
     timers = TimerSettings(
         soundUri = this[stringPreferencesKey("timerSound")],
         vibrate = this[booleanPreferencesKey("timerVibrate")] ?: true,
-        presets = this[stringPreferencesKey("timerPresetSeconds")]
-            ?.split(",")
-            ?.mapNotNull { it.toIntOrNull() }
-            ?.takeIf { it.size == 4 }
-            ?: DEFAULT_TIMER_PRESETS,
+        presets = normalizedTimerPresets(
+            this[stringPreferencesKey("timerPresetSeconds")]?.split(",")?.map { it.toIntOrNull() ?: 0 }.orEmpty(),
+        ),
     ),
     theme = ThemeSettings(
         dynamicColor = this[booleanPreferencesKey("dynamicColor")] ?: true,
@@ -493,26 +504,34 @@ private fun parseCities(s: String): List<WorldCity> = runCatching {
     }
 }.getOrDefault(emptyList())
 
-private fun encodeTimer(t: ClockTimer) = JSONObject()
-    .put("id", t.id)
-    .put("label", t.label)
-    .put("total", t.total.toMillis())
-    .put("state", t.state.name)
-    .put("deadline", t.deadlineElapsedMillis)
-    .put("paused", t.pausedRemaining.toMillis())
-    .toString()
+internal fun ClockTimer.toTimerJson() = JSONObject()
+    .put("id", id)
+    .put("label", label)
+    .put("total", total.toMillis())
+    .put("state", state.name)
+    .put("deadline", deadlineElapsedMillis)
+    .put("paused", pausedRemaining.toMillis())
+    .put("sweepAnchor", sweepAnchor)
+    .put("sweepRemaining", sweepRemainingMillis)
+    .put("wallDeadline", wallDeadlineMillis)
+    .put("bootCount", bootCount)
+    .put("chimePending", chimePending)
 
-private fun parseTimer(s: String): ClockTimer? = runCatching {
-    val o = JSONObject(s)
-    ClockTimer(
-        id = o.getLong("id"),
-        label = o.getString("label"),
-        total = Duration.ofMillis(o.getLong("total")),
-        state = enumOr(o.getString("state"), TimerState.IDLE),
-        deadlineElapsedMillis = o.getLong("deadline"),
-        pausedRemaining = Duration.ofMillis(o.getLong("paused")),
-    )
-}.getOrNull()
+private fun parseTimer(s: String): ClockTimer? = runCatching { JSONObject(s).toClockTimer() }.getOrNull()
+
+internal fun JSONObject.toClockTimer() = ClockTimer(
+    id = getLong("id"),
+    label = getString("label"),
+    total = Duration.ofMillis(getLong("total")),
+    state = enumOr(getString("state"), TimerState.IDLE),
+    deadlineElapsedMillis = getLong("deadline"),
+    pausedRemaining = Duration.ofMillis(getLong("paused")),
+    sweepAnchor = optDouble("sweepAnchor", 0.0),
+    sweepRemainingMillis = optLong("sweepRemaining", getLong("total")),
+    wallDeadlineMillis = optLong("wallDeadline"),
+    bootCount = optInt("bootCount", -1),
+    chimePending = optBoolean("chimePending"),
+)
 
 private fun encodeStopwatch(s: Stopwatch) = JSONObject()
     .put("running", s.running)

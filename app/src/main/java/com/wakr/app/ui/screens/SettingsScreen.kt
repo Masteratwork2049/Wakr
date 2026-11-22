@@ -125,7 +125,7 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.wakr.app.data.ClockSettings
-import com.wakr.app.data.DEFAULT_TIMER_PRESETS
+import com.wakr.app.data.normalizedTimerPresets
 import com.wakr.app.data.DarkMode
 import com.wakr.app.data.WeekStart
 import com.wakr.app.ui.elasticClickable
@@ -1062,7 +1062,7 @@ fun TimerPresetsDialog(
     onSave: (List<Int>) -> Unit,
 ) {
     var currentPresets by remember(presets) {
-        mutableStateOf(presets.take(4).let { if (it.size == 4) it else DEFAULT_TIMER_PRESETS })
+        mutableStateOf(normalizedTimerPresets(presets))
     }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
 
@@ -1082,7 +1082,7 @@ fun TimerPresetsDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 currentPresets.forEachIndexed { index, seconds ->
                     Row(
                         modifier = Modifier

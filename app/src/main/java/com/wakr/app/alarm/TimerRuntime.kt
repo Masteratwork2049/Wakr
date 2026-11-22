@@ -1,0 +1,129 @@
+package com.wakr.app.alarm
+
+import android.content.Context
+import android.content.Intent
+import android.os.SystemClock
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import com.wakr.app.core.ClockTimer
+import com.wakr.app.core.MAX_TIMERS
+import com.wakr.app.core.TimerState
+import com.wakr.app.core.withAddedSeconds
+import com.wakr.app.data.ClockStore
+import java.time.Duration
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+/** Serializes timer writes and their platform effects across screens, broadcasts and recovery. */
+internal object TimerRuntime {
+    private val mutex = Mutex()
+
+    suspend fun start(context: Context, duration: Duration, name: String): Boolean = transaction {
+        if (duration.isZero || duration.isNegative) return@transaction false
+        val store = ClockStore(context)
+        val timers = store.timersNow()
+        if (timers.size >= MAX_TIMERS) return@transaction false
+        val label = name.trim().ifBlank {
+            (1..MAX_TIMERS).map { "Timer $it" }.first { candidate -> timers.none { it.label == candidate } }
+        }
+        val timer = ClockTimer(store.nextId(), label, duration, TimerState.RUNNING,
+            SystemClock.elapsedRealtime() + duration.toMillis()).withCurrentDeadline(context)
+        store.updateTimers { it + timer }
+        TimerScheduler.sync(context, timer.id, timer)
+        true
+    }
+
+    suspend fun toggle(context: Context, id: Long) = change(context, id) { timer, now ->
+        when (timer.state) {
+            TimerState.RUNNING -> if (timer.deadlineElapsedMillis <= now) timer else
+                timer.copy(state = TimerState.PAUSED, pausedRemaining = timer.remaining(now), wallDeadlineMillis = 0L)
+            TimerState.PAUSED -> timer.copy(state = TimerState.RUNNING,
+                deadlineElapsedMillis = now + timer.pausedRemaining.toMillis()).withCurrentDeadline(context)
+            else -> timer
+        }
+    }
+
+    suspend fun add(context: Context, id: Long, seconds: Long) = change(context, id) { timer, now ->
+        when {
+            timer.state == TimerState.PAUSED -> timer.withAddedSeconds(seconds, now)
+            timer.state == TimerState.RUNNING && timer.deadlineElapsedMillis > now ->
+                timer.withAddedSeconds(seconds, now).withCurrentDeadline(context)
+            else -> timer
+        }
+    }
+
+    suspend fun cancel(context: Context, id: Long) = transaction {
+        val store = ClockStore(context)
+        val timer = store.timersNow().find { it.id == id } ?: return@transaction
+        store.updateTimers { timers -> timers.filterNot { it.id == timer.id } }
+        TimerScheduler.sync(context, timer.id, null)
+        AlarmService.refreshTimerChime(timer.id)
+    }
+
+    suspend fun expire(context: Context, id: Long) = transaction {
+        val store = ClockStore(context)
+        val now = SystemClock.elapsedRealtime()
+        val expired = store.timersNow().filter {
+            (it.id == id || id == -1L) && it.state == TimerState.RUNNING && it.deadlineElapsedMillis <= now
+        }.map { it.copy(state = TimerState.FINISHED, pausedRemaining = Duration.ZERO, chimePending = true) }
+        if (expired.isEmpty()) {
+            store.timersNow().firstOrNull { it.id == id && it.state == TimerState.RUNNING }
+                ?.let { TimerScheduler.sync(context, it.id, it) }
+            return@transaction
+        }
+        val byId = expired.associateBy { it.id }
+        store.updateTimers { timers -> timers.map { byId[it.id] ?: it } }
+        expired.forEach { TimerScheduler.sync(context, it.id, it) }
+        try {
+            ContextCompat.startForegroundService(context, Intent(context, AlarmService::class.java)
+                .setAction(AlarmService.ACTION_START_TIMER))
+        } catch (error: IllegalStateException) {
+            android.util.Log.w("TimerRuntime", "Unable to start timer audio", error)
+        }
+    }
+
+    suspend fun silence(context: Context, id: Long) = change(context, id) { timer, _ ->
+        timer.copy(chimePending = false)
+    }
+
+    suspend fun restore(context: Context) = transaction {
+        val store = ClockStore(context)
+        val bootCount = bootCount(context)
+        val elapsed = SystemClock.elapsedRealtime()
+        val wall = System.currentTimeMillis()
+        val timers = store.updateTimers { saved ->
+            saved.map { timer ->
+                if (timer.state != TimerState.RUNNING) timer else {
+                    val deadline = if (timer.bootCount >= 0 && bootCount >= 0 &&
+                        timer.bootCount != bootCount && timer.wallDeadlineMillis > 0
+                    ) elapsed + (timer.wallDeadlineMillis - wall).coerceAtLeast(0) else timer.deadlineElapsedMillis
+                    timer.copy(deadlineElapsedMillis = deadline, wallDeadlineMillis = wall + (deadline - elapsed).coerceAtLeast(0),
+                        bootCount = bootCount)
+                }
+            }
+        }
+        TimerScheduler.removeLegacyTimer(context)
+        timers.forEach { TimerScheduler.sync(context, it.id, it) }
+    }
+
+    private suspend fun change(context: Context, id: Long, transform: (ClockTimer, Long) -> ClockTimer) = transaction {
+        val store = ClockStore(context)
+        val old = store.timersNow().find { it.id == id } ?: return@transaction
+        val updated = transform(old, SystemClock.elapsedRealtime())
+        if (updated == old) return@transaction
+        store.updateTimers { timers -> timers.map { if (it.id == id) updated else it } }
+        TimerScheduler.sync(context, id, updated)
+    }
+
+    private suspend fun <T> transaction(action: suspend () -> T): T =
+        mutex.withLock { withContext(NonCancellable) { action() } }
+
+    private fun ClockTimer.withCurrentDeadline(context: Context) = copy(
+        wallDeadlineMillis = System.currentTimeMillis() + remaining(SystemClock.elapsedRealtime()).toMillis(),
+        bootCount = bootCount(context),
+    )
+
+    private fun bootCount(context: Context) = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+}

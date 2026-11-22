@@ -4,8 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
-import com.wakr.app.core.TimerState
-import com.wakr.app.data.ClockStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,7 +28,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     ACTION_RESUME_RING -> startRing(app, intent.getLongExtra(EXTRA_ID, -1L), intent.getLongExtra(UpcomingAlarm.AT, -1L))
                     ACTION_FIRE -> fire(app, intent.getLongExtra(EXTRA_ID, -1L), intent.getLongExtra(UpcomingAlarm.AT, 0))
                     UpcomingAlarm.SHOW, UpcomingAlarm.SKIP -> UpcomingAlarm.receive(app, intent)
-                    ACTION_TIMER_EXPIRED -> timerExpired(app)
+                    ACTION_TIMER_EXPIRED -> TimerRuntime.expire(app, intent.getLongExtra(EXTRA_ID, -1L))
                 }
             } finally {
                 pending.finish()
@@ -67,20 +65,6 @@ class AlarmReceiver : BroadcastReceiver() {
         if (id < 0 || at <= 0) return
         ContextCompat.startForegroundService(context, Intent(context, AlarmService::class.java)
             .setAction(AlarmService.ACTION_START).putExtra(EXTRA_ID, id).putExtra(UpcomingAlarm.AT, at))
-    }
-
-    private suspend fun timerExpired(context: Context) {
-        val store = ClockStore(context)
-        val timer = store.timerNow() ?: return
-        if (timer.state != TimerState.RUNNING ||
-            timer.remaining(android.os.SystemClock.elapsedRealtime()).toMillis() > 1000) return
-        // Mark the timer as FINISHED so the full-screen finished screen is presented in the app
-        store.putTimer(timer.copy(state = TimerState.FINISHED))
-        Notifications.hideTimer(context)
-        ContextCompat.startForegroundService(
-            context,
-            Intent(context, AlarmService::class.java).setAction(AlarmService.ACTION_START_TIMER),
-        )
     }
 
     companion object {

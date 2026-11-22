@@ -45,6 +45,27 @@ class WakeStoreTest {
         setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), false, false, "content://tone/81",
         1234, 321, LocalDate.parse("2026-09-17"), wake = WakeOptions(maxSnoozes = null))
 
+    @Test fun legacyTimerRetainsItsDeadlineWhenTheTimerListIsWrittenAndReopened() = runBlocking {
+        val original = ClockTimer(157, "Tea", java.time.Duration.ofSeconds(90), TimerState.RUNNING, 110_000)
+        val second = ClockTimer(158, "Oven", java.time.Duration.ofSeconds(30), TimerState.PAUSED)
+        open(emptyList()) { prefs ->
+            prefs.edit {
+                it[stringPreferencesKey("timer")] =
+                    """{"id":157,"label":"Tea","total":90000,"state":"RUNNING","deadline":110000,"paused":90000}"""
+            }
+            val store = ClockStore(prefs)
+            assertEquals(listOf(original), store.timersNow())
+            store.updateTimers { it + second }
+        }
+        open(emptyList()) { prefs ->
+            val store = ClockStore(prefs)
+            assertEquals(listOf(original, second), store.timersNow())
+            assertNull(prefs.data.first()[stringPreferencesKey("timer")])
+            store.updateTimers { timers -> timers.filterNot { it.id == second.id } }
+            assertEquals(listOf(original), store.timersNow())
+        }
+    }
+
     @Test fun vanillaFileUpgradesOnceAndRetainsOtherSettings() = runBlocking {
         open(emptyList()) { prefs ->
             prefs.edit {
@@ -61,7 +82,7 @@ class WakeStoreTest {
                 assertFalse(WakeMigration.shouldMigrate(prefs.data.first()))
                 assertEquals(original, store.alarmsNow().single())
                 assertEquals("Asia/Kolkata", store.cities.first().single().zone.id)
-                assertEquals(listOf(9, 19, 29, 39), store.settingsNow().timers.presets)
+                assertEquals(listOf(9, 19, 29, 39, 900, 1800), store.settingsNow().timers.presets)
                 assertEquals(7, store.settingsNow().alarms.snoozeMinutes)
                 assertEquals(132L + attempt, store.nextId())
                 assertTrue(store.wakeHistory.first().isEmpty())

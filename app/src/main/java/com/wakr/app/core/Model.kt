@@ -170,6 +170,8 @@ data class WorldCity(
 
 enum class TimerState { IDLE, RUNNING, PAUSED, FINISHED }
 
+internal const val MAX_TIMERS = 4
+
 /**
  * A countdown.
  *
@@ -184,12 +186,24 @@ data class ClockTimer(
     val state: TimerState = TimerState.IDLE,
     val deadlineElapsedMillis: Long = 0L,
     val pausedRemaining: Duration = total,
+    val sweepAnchor: Double = 0.0,
+    val sweepRemainingMillis: Long = total.toMillis(),
+    val wallDeadlineMillis: Long = 0L,
+    val bootCount: Int = -1,
+    val chimePending: Boolean = false,
 ) {
     fun remaining(nowElapsedMillis: Long): Duration = when (state) {
         TimerState.RUNNING ->
             Duration.ofMillis((deadlineElapsedMillis - nowElapsedMillis).coerceAtLeast(0L))
         TimerState.IDLE -> total
-        else -> pausedRemaining
+        TimerState.FINISHED -> Duration.ZERO
+        TimerState.PAUSED -> pausedRemaining
+    }
+
+    internal fun counterclockwiseProgress(nowElapsedMillis: Long): Double {
+        val remainingMillis = remaining(nowElapsedMillis).toMillis()
+        val fraction = (remainingMillis.toDouble() / sweepRemainingMillis.coerceAtLeast(1L)).coerceIn(0.0, 1.0)
+        return sweepAnchor + (1.0 - sweepAnchor) * (1.0 - fraction)
     }
 
     fun fractionLeft(nowElapsedMillis: Long): Float {

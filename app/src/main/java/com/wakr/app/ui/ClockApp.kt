@@ -494,11 +494,11 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                     Tab.WORLD -> Unit // Routed to the clock content branch above.
 
                     Tab.TIMERS -> {
-                        val timer by vm.timer.collectAsStateWithLifecycle()
-                        val now by rememberElapsedTicker(active = timer?.state == com.wakr.app.core.TimerState.RUNNING
+                        val timers by vm.timers.collectAsStateWithLifecycle()
+                        val now = rememberElapsedTicker(active = timers.any { it.state == com.wakr.app.core.TimerState.RUNNING }
                             && pagerState.currentPage == Tab.TIMERS.ordinal && !showSettings)
                         TimersScreen(
-                            timer = timer,
+                            timers = timers,
                             draft = vm.draftDuration,
                             nowElapsedMillis = now,
                             presets = settings.timers.presets,
@@ -515,10 +515,10 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                     ))
                                 }
                             },
-                            onStart = { vm.startTimer() },
-                            onPauseResume = { vm.pauseOrResumeTimer() },
-                            onAddTen = { vm.addTenSeconds() },
-                            onCancel = { vm.cancelTimer() },
+                            onStart = { vm.startTimer(it) },
+                            onPauseResume = { vm.pauseOrResumeTimer(it) },
+                            onAddTen = { vm.addTenSeconds(it) },
+                            onCancel = { vm.cancelTimer(it) },
                             contentPadding = edgeToEdge,
                         )
                     }
