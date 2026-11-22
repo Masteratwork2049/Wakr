@@ -8,7 +8,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,7 +39,6 @@ import kotlin.random.Random
 internal val MissionType.title: String
     get() = when (this) {
         MissionType.QR -> "QR or barcode"
-        MissionType.NFC -> "NFC tag"
         MissionType.FOCUS_TAP -> "Focus Tap"
         MissionType.MEMORY -> "Memory"
         MissionType.PUZZLE -> "Puzzle"
@@ -86,7 +84,7 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
                 MissionType.FOCUS_TAP -> FocusChallenge(mission.focusBoardSize, seed, ::pass)
                 MissionType.PUZZLE -> PuzzleChallenge(mission, seed, ::pass)
                 MissionType.TYPING -> TypingChallenge(mission.difficulty, seed, ::pass)
-                MissionType.QR, MissionType.NFC -> {
+                MissionType.QR -> {
                     val target = mission.target
                     var fallback by rememberSaveable { mutableStateOf(false) }
                     var mismatch by remember { mutableStateOf(false) }
@@ -96,7 +94,7 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
                         )
                         target == null -> {
                             MissionScannerPrompt(
-                                if (mission.type == MissionType.NFC) Icons.Outlined.Nfc else Icons.Outlined.QrCodeScanner,
+                                Icons.Outlined.QrCodeScanner,
                                 "This mission needs a registered item.",
                             )
                             if (allowScannerFallback) TextButton(onClick = { fallback = true }) {
@@ -105,7 +103,7 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
                         }
                         else -> {
                             if (mismatch) Text("That item does not match. Scan ${target.label}.")
-                            ScanMission(mission.type, onUnavailable = if (allowScannerFallback) ({ fallback = true }) else null) {
+                            ScanMission(onUnavailable = if (allowScannerFallback) ({ fallback = true }) else null) {
                                 if (it == target.value) pass() else mismatch = true
                             }
                         }

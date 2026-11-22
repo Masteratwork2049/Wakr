@@ -1,12 +1,7 @@
 package com.wakr.app.ui.missions
 
 import android.Manifest
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.pm.PackageManager
-import android.nfc.NfcAdapter
-import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -17,7 +12,6 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -28,71 +22,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
-import com.wakr.app.core.MissionType
-import java.util.Locale
 import java.util.concurrent.Executors
 
-private tailrec fun Context.activity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.activity()
-    else -> null
-}
-
 @Composable
-internal fun ScanMission(type: MissionType, onUnavailable: (() -> Unit)? = null, onScan: (String) -> Unit) {
-    if (type == MissionType.NFC) ScanNfc(onUnavailable, onScan) else ScanBarcode(onUnavailable, onScan)
-}
-
-@Composable
-private fun ScanNfc(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) {
-    val context = LocalContext.current
-    val activity = context.activity()
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val adapter = remember(context) { NfcAdapter.getDefaultAdapter(context) }
-    val result by rememberUpdatedState(onScan)
-    var enabled by remember { mutableStateOf(adapter?.isEnabled == true) }
-    if (adapter == null || activity == null) {
-        MissionScannerPrompt(Icons.Outlined.Nfc, "NFC is unavailable on this device.")
-        ScannerFallback(onUnavailable)
-        return
-    }
-    DisposableEffect(adapter, activity, lifecycle) {
-        fun start() {
-            enabled = adapter.isEnabled
-            if (!enabled) return
-            adapter.enableReaderMode(activity, { tag ->
-                val id = tag.id.joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 255) }
-                activity.runOnUiThread { if (id.isNotEmpty()) result(id) }
-            }, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NFC_F or
-                NfcAdapter.FLAG_READER_NFC_V or NfcAdapter.FLAG_READER_NFC_BARCODE or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, Bundle())
-        }
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> start()
-                Lifecycle.Event.ON_PAUSE -> adapter.disableReaderMode(activity)
-                else -> Unit
-            }
-        }
-        lifecycle.addObserver(observer)
-        onDispose {
-            lifecycle.removeObserver(observer)
-            runCatching { adapter.disableReaderMode(activity) }
-        }
-    }
-    MissionScannerPrompt(Icons.Outlined.Nfc,
-        if (enabled) "Hold the phone near the NFC tag." else "Turn on NFC in Android Settings.")
-    if (!enabled) ScannerFallback(onUnavailable)
-}
-
-@Composable
-private fun ScanBarcode(onUnavailable: (() -> Unit)?, onScan: (String) -> Unit) {
+internal fun ScanMission(onUnavailable: (() -> Unit)? = null, onScan: (String) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val main = remember(context) { ContextCompat.getMainExecutor(context) }

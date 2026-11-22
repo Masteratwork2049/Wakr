@@ -168,7 +168,7 @@ private fun MissionEditor(initial: AlarmMission, onClose: () -> Unit, save: (Ala
     var mission by remember(initial) { mutableStateOf(initial) }
     var scan by remember { mutableStateOf(false) }
     var label by remember { mutableStateOf(initial.target?.label.orEmpty()) }
-    val usesScanner = initial.type == MissionType.QR || initial.type == MissionType.NFC
+    val usesScanner = initial.type == MissionType.QR
     AlertDialog(onDismissRequest = onClose, title = { Text(initial.type.title) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (initial.type == MissionType.MATH || initial.type == MissionType.MEMORY) {
@@ -202,9 +202,8 @@ private fun MissionEditor(initial: AlarmMission, onClose: () -> Unit, save: (Ala
             }
             if (usesScanner) {
                 OutlinedTextField(label, { label = it.take(60) }, label = { Text("Item name") }, singleLine = true)
-                if (scan) ScanMission(initial.type) {
-                    val kind = if (initial.type == MissionType.NFC) ScanKind.NFC else ScanKind.BARCODE
-                    mission = mission.copy(target = ScanTarget(kind, it, ""))
+                if (scan) ScanMission {
+                    mission = mission.copy(target = ScanTarget(ScanKind.BARCODE, it, ""))
                     scan = false
                 } else {
                     if (mission.target != null) Text("Item registered")

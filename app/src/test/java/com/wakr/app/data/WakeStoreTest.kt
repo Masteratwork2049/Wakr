@@ -127,13 +127,26 @@ class WakeStoreTest {
         assertNull(legacy.passedWakeChecks)
     }
 
+    @Test fun retiredNfcMissionsKeepTheirPlaceInBothAlarmChains() {
+        val memory = AlarmMission(15, MissionType.MEMORY)
+        val oldMission = org.json.JSONObject("""{"id":16,"type":"NFC","target":{"kind":"NFC","value":"1234","label":"Desk"}}""")
+        val math = AlarmMission(16, MissionType.MATH, MissionDifficulty.HARD, roundsOrCount = 3)
+        val encoded = org.json.JSONArray(encodeAlarms(listOf(original)))
+        val alarm = encoded.getJSONObject(0)
+        alarm.put("missions", org.json.JSONArray().put(memory.toJson()).put(oldMission))
+        alarm.put("wake", WakeOptions().toJson().put("unlockMissions", org.json.JSONArray().put(oldMission)))
+        val decoded = parseAlarms(encoded.toString()).single()
+        assertEquals(listOf(memory, math), decoded.missions)
+        assertEquals(listOf(math), decoded.wake.unlockMissions)
+        assertEquals(decoded, parseAlarms(encodeAlarms(listOf(decoded))).single())
+    }
+
     @Test fun missionOrderPolicyRegistrationAndHistorySurviveRestartAndDeletion() = runBlocking {
         val code = ScanTarget(ScanKind.BARCODE, "00012345", "Kitchen")
-        val tag = ScanTarget(ScanKind.NFC, "00012345", "Desk")
         val types = MissionType.entries.reversed()
         val missions = types.mapIndexed { i, type ->
             AlarmMission(50L + i, type, MissionDifficulty.HARD, 3, """{"mode":"test"}""",
-                when (type) { MissionType.QR -> code; MissionType.NFC -> tag; else -> null })
+                code.takeIf { type == MissionType.QR })
         }
         val options = WakeOptions(
             scheduledDateEpochDay = 21_000, pausedUntilEpochDay = 20_009, timeZoneId = "Asia/Kolkata",
@@ -152,7 +165,6 @@ class WakeStoreTest {
             store.putAlarms(listOf(alarm))
             store.registerTarget(code.copy(label = "Old name"))
             store.registerTarget(code)
-            store.registerTarget(tag)
             coroutineScope {
                 for (i in 0L..4L) launch(Dispatchers.Default) { store.putWakeLog(log.copy(id = log.id + i)) }
             }
@@ -161,7 +173,7 @@ class WakeStoreTest {
         open(listOf(WakeMigration)) { prefs ->
             val store = ClockStore(prefs)
             assertEquals(alarm, store.alarmsNow().single())
-            assertEquals(listOf(code, tag), store.scanTargets.first())
+            assertEquals(listOf(code), store.scanTargets.first())
             store.updateAlarms { it.map { a -> a.copy(missions = a.missions.reversed()) } }
             assertEquals(missions.reversed(), store.alarmsNow().single().missions)
             store.updateAlarms { list -> list.filterNot { it.id == alarm.id } }

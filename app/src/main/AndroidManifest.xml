@@ -34,11 +34,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <!-- Puts the dismiss screen in front of a locked phone. Degrades to a heads-up banner. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />

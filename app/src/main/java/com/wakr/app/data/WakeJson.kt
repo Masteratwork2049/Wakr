@@ -110,14 +110,21 @@ internal fun AlarmMission.toJson() = JSONObject()
     .put("config", configJson)
     .put("target", target?.toJson())
 
-internal fun JSONObject.toMission() = AlarmMission(
-    id = getLong("id"),
-    type = MissionType.valueOf(getString("type")),
-    difficulty = enum("difficulty", MissionDifficulty.EASY),
-    roundsOrCount = optInt("roundsOrCount", 1),
-    configJson = optString("config", "{}"),
-    target = optJSONObject("target")?.toScanTarget(),
-)
+internal fun JSONObject.toMission(): AlarmMission {
+    val id = getLong("id")
+    val type = getString("type")
+    // Keep the position of saved missions in both wake-up and pre-ring unlock chains.
+    // Math is the same substitute used when a ringing alarm cannot scan its registered item.
+    if (type == "NFC") return AlarmMission(id, MissionType.MATH, MissionDifficulty.HARD, roundsOrCount = 3)
+    return AlarmMission(
+        id = id,
+        type = MissionType.valueOf(type),
+        difficulty = enum("difficulty", MissionDifficulty.EASY),
+        roundsOrCount = optInt("roundsOrCount", 1),
+        configJson = optString("config", "{}"),
+        target = optJSONObject("target")?.toScanTarget(),
+    )
+}
 
 internal fun WakeUpLog.toJson() = JSONObject()
     .put("id", id)

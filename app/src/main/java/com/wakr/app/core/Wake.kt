@@ -2,11 +2,11 @@ package com.wakr.app.core
 
 enum class AlarmSoundMode { ONE, SURPRISE, LOCAL_MUSIC }
 enum class VibrationPattern { DEFAULT, SOS, PULSE, HEARTBEAT }
-enum class MissionType { QR, NFC, FOCUS_TAP, MEMORY, PUZZLE, TYPING, MATH }
+enum class MissionType { QR, FOCUS_TAP, MEMORY, PUZZLE, TYPING, MATH }
 enum class MissionDifficulty { EASY, MEDIUM, HARD }
-enum class ScanKind { BARCODE, NFC }
+enum class ScanKind { BARCODE }
 
-/** The barcode payload or NFC UID is matched exactly. The label is for display. */
+/** The barcode payload is matched exactly. The label is for display. */
 data class ScanTarget(val kind: ScanKind, val value: String, val label: String)
 
 /** Membership in an alarm and position in its list define ownership and execution order. */
