@@ -37,10 +37,10 @@ class BootReceiver : BroadcastReceiver() {
         val recover = mutableSetOf<Long>()
         val alarms = if (!recovering) RuntimeAlarms.read(context) else RuntimeAlarms.update(context) { list ->
             list.map { alarm ->
-                if (alarm.ringingAt != null && alarm.rebootCount < alarm.wake.rebootSurvivalMax) {
+                if (alarm.ringingAt != null && alarm.wake.rebootRecovery) {
                     recover += alarm.id
-                    alarm.copy(rebootCount = alarm.rebootCount + 1)
-                } else if (alarm.ringingAt != null) alarm.copy(ringingAt = null) else alarm
+                    alarm.copy(rebootCount = alarm.rebootCount.coerceAtMost(Int.MAX_VALUE - 1) + 1)
+                } else if (alarm.ringingAt != null) alarm.copy(ringingAt = null, ringSoundUri = null) else alarm
             }
         }
         Notifications.ensureChannels(context)

@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal const val EMERGENCY_HOLD_MS = 10_000L
+private val RingPillHeight = 64.dp
 
 @Composable
 internal fun RingActionPill(
@@ -39,7 +40,7 @@ internal fun RingActionPill(
     onAction: (Offset) -> Unit,
 ) {
     var center by remember { mutableStateOf(Offset.Zero) }
-    val modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).onGloballyPositioned {
+    val modifier = Modifier.fillMaxWidth().heightIn(min = RingPillHeight).onGloballyPositioned {
         center = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f))
     }
     val onClick = { onAction(center) }
@@ -112,8 +113,8 @@ internal fun EmergencyStopButton(onStop: (Offset) -> Unit) {
                     }
                 })
             }
-            .heightIn(min = 64.dp)
-            .padding(horizontal = 24.dp, vertical = 10.dp),
+            .heightIn(min = RingPillHeight)
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         RingPillLabel(Icons.Outlined.MedicalServices, "Emergency stop", colors.onErrorContainer, "Hold for 10 seconds")

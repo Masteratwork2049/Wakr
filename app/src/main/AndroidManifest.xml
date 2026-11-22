@@ -122,6 +122,15 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
             android:theme="@style/Theme.MaterialClock.App" />
 
+        <activity
+            android:name=".alarm.TimerRingActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.MaterialClock.App" />
+
         <service
             android:name=".alarm.AlarmService" android:directBootAware="true"
             android:exported="false"

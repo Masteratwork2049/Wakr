@@ -49,7 +49,7 @@ internal fun WakeOptions.toJson() = JSONObject()
     .put("reRingIntervalMin", reRingIntervalMin)
     .put("deleteAfterDismiss", deleteAfterDismiss)
     .put("lockBeforeRingMin", lockBeforeRingMin)
-    .put("rebootSurvivalMax", rebootSurvivalMax)
+    .put("rebootRecovery", rebootRecovery)
     .put("stillAwakeChecksCount", stillAwakeChecksCount)
     .put("stillAwakeDelayMin", stillAwakeDelayMin)
     .put("muteDurationSec", muteDurationSec)
@@ -79,7 +79,7 @@ internal fun JSONObject.toWakeOptions() = WakeOptions(
     reRingIntervalMin = optInt("reRingIntervalMin", 5),
     deleteAfterDismiss = optBoolean("deleteAfterDismiss", false),
     lockBeforeRingMin = optInt("lockBeforeRingMin", 0),
-    rebootSurvivalMax = optInt("rebootSurvivalMax", 0),
+    rebootRecovery = optBoolean("rebootRecovery", optInt("rebootSurvivalMax") > 0),
     stillAwakeChecksCount = optInt("stillAwakeChecksCount", 0),
     stillAwakeDelayMin = optInt("stillAwakeDelayMin", 5),
     muteDurationSec = optInt("muteDurationSec", 30).takeIf { it in MUTE_DURATIONS_SECONDS } ?: 30,

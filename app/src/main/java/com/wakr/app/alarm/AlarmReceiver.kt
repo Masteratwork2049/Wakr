@@ -45,6 +45,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 firing = alarm
                 val continuation = alarm.snoozedUntilMillis == at
                 alarm.copy(ringingAt = at, firstRingAt = alarm.firstRingAt?.takeIf { continuation } ?: at,
+                    ringSoundUri = alarm.ringSoundUri.takeIf { continuation },
                     snoozeCount = alarm.snoozeCount.takeIf { continuation } ?: 0,
                     missionMuteCount = if (continuation) alarm.missionMuteCount else 0,
                     missionIndex = alarm.missionIndex.takeIf { continuation } ?: 0,

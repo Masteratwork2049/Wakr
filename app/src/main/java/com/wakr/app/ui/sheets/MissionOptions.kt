@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -366,8 +367,8 @@ private fun DifficultyOptions(wake: WakeOptions, save: (WakeOptions) -> Unit) {
                 save(wake.copy(unlockMissions = missions, lockBeforeRingMin = lockMinutes))
             }
         }
-        NumberChoice("Reboot recovery", wake.rebootSurvivalMax, (0..5).toList(), { if (it == 0) "Off" else it.toString() }) {
-            save(wake.copy(rebootSurvivalMax = it))
+        AlarmOptionSwitchRow("Reboot recovery", Icons.Outlined.RestartAlt, wake.rebootRecovery) {
+            save(wake.copy(rebootRecovery = it))
         }
         NumberChoice("Still-awake checks", checks, (0..3).toList(), { if (it == 0) "Off" else it.toString() },
             custom = CustomNumber("Number of checks (4 or more)", 4..Int.MAX_VALUE)) {

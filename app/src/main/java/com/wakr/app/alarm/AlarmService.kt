@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
@@ -76,6 +78,8 @@ class AlarmService : Service() {
     private var timerChimeId: Long? = null
     private var torchId: String? = null
     private var silenceJob: Job? = null
+    private var volumeGuard: Job? = null
+    private var soundUnlockJob: Job? = null
     private var effectsJob: Job? = null
     private var muteExpiryJob: Job? = null
     private var muteOptions = com.wakr.app.core.WakeOptions()
@@ -113,12 +117,52 @@ class AlarmService : Service() {
                 timerChimeId = null
                 occurrence = id to at
                 current = this@AlarmService
-                val uri = alarmRingtone(this@AlarmService, alarm, at)
+                val unlocked = RuntimeAlarms.unlocked(this@AlarmService)
+                val uri = if (unlocked) selectRingSound(alarm, at)
+                    else alarm.ringSoundUri ?: alarm.soundUri ?: bundledFallback()
+                sound.onStarted = null
+                if (unlocked && alarm.ringSoundUri == null) rememberPlayedSound(alarm, at, uri)
                 val pattern = alarmVibrationPattern(alarm.wake.vibrationPattern)
                 ring(ringingNotification(this@AlarmService, alarm, at), uri, alarm.vibrate, pattern,
                     alarm.wake.silenceAfterMin ?: settings.alarms.silenceAfterMinutes,
                     alarm.wake.volumePercent, alarm.wake.fadeInSeconds)
                 startEffects(alarm, at)
+                soundUnlockJob?.cancel()
+                if (!unlocked) soundUnlockJob = scope.launch {
+                    while (!RuntimeAlarms.unlocked(this@AlarmService)) delay(250)
+                    starts.withLock resumeSound@{
+                        if (occurrence != (alarm.id to at) || !active) return@resumeSound
+                        val restored = RuntimeAlarms.read(this@AlarmService)
+                            .firstOrNull { it.id == alarm.id && it.ringingAt == at } ?: return@resumeSound
+                        val restoredUri = selectRingSound(restored, at)
+                        if (restoredUri != uri) {
+                            if (restored.ringSoundUri == null) rememberPlayedSound(restored, at, restoredUri)
+                            val muted = muteState.value?.untilElapsedMs != null
+                            sound.play(restoredUri, restored.wake.volumePercent, restored.wake.fadeInSeconds)
+                            if (muted) sound.pause()
+                            if (restoredUri == SILENT) volumeGuard?.cancel()
+                            else if (uri == SILENT) monitorAlertVolume()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun bundledFallback() = "android.resource://$packageName/${R.raw.alarm_fallback}"
+
+    private suspend fun selectRingSound(alarm: Alarm, at: Long): String {
+        alarm.ringSoundUri?.let { return it }
+        val selected = alarmRingtone(this, alarm, at) ?: runCatching {
+            RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM)?.toString()
+        }.getOrNull() ?: bundledFallback()
+        return RuntimeAlarms.rememberRingSound(this, alarm.id, at, null, selected) ?: selected
+    }
+
+    private fun rememberPlayedSound(alarm: Alarm, at: Long, selected: String) {
+        sound.onStarted = { actual ->
+            if (actual != selected && occurrence == (alarm.id to at)) {
+                scope.launch { RuntimeAlarms.rememberRingSound(this@AlarmService, alarm.id, at, selected, actual) }
             }
         }
     }
@@ -137,12 +181,13 @@ class AlarmService : Service() {
         else emptyList()
         val ringingTimer = pending.firstOrNull { it.id == timerChimeId }
         if (active && ringingTimer != null) {
-            foreground(Notifications.timerChimeSummary(this, ringingTimer))
+            foreground(Notifications.timerChimeSummary(this, ringingTimer, openFullScreen = false))
             return
         }
-        val next = pending.minByOrNull { it.deadlineElapsedMillis }
+        val next = pending.minWithOrNull(timerAlertOrder)
         if (next == null) {
             active = false
+            volumeGuard?.cancel()
             if (startId == null) stopSelf() else stopSelf(startId)
             return
         }
@@ -153,8 +198,11 @@ class AlarmService : Service() {
         timerChimeId = next.id
         current = this
         stopEffects()
+        soundUnlockJob?.cancel()
+        sound.onStarted = null
         ring(Notifications.timerChimeSummary(this, next), settings.timers.soundUri,
             settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
+        if (mainActivityVisible) launchAlertIfAllowed(this, TimerRingActivity.screenIntent(this, next.id))
     }
 
     private fun ring(notification: android.app.Notification, uri: String?, shouldVibrate: Boolean,
@@ -165,6 +213,8 @@ class AlarmService : Service() {
         foreground(notification)
         active = true
         if (uri != SILENT) sound.play(uri, volume, fadeSeconds)
+        volumeGuard?.cancel()
+        if (uri != SILENT) monitorAlertVolume()
         if (shouldVibrate) vibrate(pattern)
         // This timeout belongs to the active ringer, not a pending replacement's load job.
         silenceJob = scope.launch {
@@ -192,6 +242,33 @@ class AlarmService : Service() {
                 }
                 occurrence = null
                 playNextTimerOrStop()
+            }
+        }
+    }
+
+    private fun monitorAlertVolume() {
+        val audio = getSystemService(AudioManager::class.java)
+        val stream = AudioManager.STREAM_ALARM
+        var last = audio.getStreamVolume(stream)
+        var wasMuted = audio.isStreamMute(stream)
+        volumeGuard = scope.launch {
+            while (active) {
+                delay(120)
+                val volume = audio.getStreamVolume(stream)
+                val muted = audio.isStreamMute(stream)
+                val target = alertVolumeFloor(audio.getStreamMaxVolume(stream))
+                val loweredBelowFloor = volume < last && volume < target
+                val mutedDuringAlert = muted && !wasMuted
+                if (target > 0 && (loweredBelowFloor || mutedDuringAlert)) {
+                    try {
+                        if (muted) audio.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0)
+                        if (audio.getStreamVolume(stream) < target) audio.setStreamVolume(stream, target, 0)
+                    } catch (blocked: SecurityException) {
+                        android.util.Log.d("AlarmService", "Android restricted alarm volume adjustment", blocked)
+                    }
+                }
+                last = audio.getStreamVolume(stream)
+                wasMuted = audio.isStreamMute(stream)
             }
         }
     }
@@ -399,6 +476,14 @@ class AlarmService : Service() {
 
         internal var stopPreview: (() -> Unit)? = null
 
+        internal var mainActivityVisible = false
+
+        internal fun isAlarmRinging(id: Long, at: Long) =
+            current?.let { it.active && it.occurrence == (id to at) } == true
+
+        internal fun isTimerChiming(id: Long) =
+            current?.let { it.active && it.occurrence == null && it.timerChimeId == id } == true
+
         fun hasActiveAlarm(): Boolean = current?.let { it.active && it.occurrence != null } == true
 
         fun stop(context: Context) {
@@ -442,6 +527,8 @@ class AlarmService : Service() {
 
     }
 }
+
+internal fun alertVolumeFloor(max: Int): Int = ((max.coerceAtLeast(0).toLong() * 4 + 4) / 5).toInt()
 
 internal fun alarmRingtone(context: Context, alarm: Alarm, at: Long): String? = when (alarm.wake.soundMode) {
     AlarmSoundMode.ONE -> alarm.soundUri

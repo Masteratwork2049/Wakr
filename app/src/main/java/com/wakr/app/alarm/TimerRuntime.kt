@@ -109,12 +109,19 @@ internal object TimerRuntime {
         val wall = System.currentTimeMillis()
         val timers = store.updateTimers { saved ->
             saved.map { timer ->
-                if (timer.state != TimerState.RUNNING) timer else {
-                    val deadline = if (timer.bootCount >= 0 && bootCount >= 0 &&
-                        timer.bootCount != bootCount && timer.wallDeadlineMillis > 0
-                    ) elapsed + (timer.wallDeadlineMillis - wall).coerceAtLeast(0) else timer.deadlineElapsedMillis
-                    timer.copy(deadlineElapsedMillis = deadline, wallDeadlineMillis = wall + (deadline - elapsed).coerceAtLeast(0),
-                        bootCount = bootCount)
+                val bootChanged = timer.bootCount >= 0 && bootCount >= 0 && timer.bootCount != bootCount &&
+                    timer.wallDeadlineMillis > 0
+                when {
+                    timer.state == TimerState.FINISHED && bootChanged -> timer.copy(
+                        deadlineElapsedMillis = elapsed + (timer.wallDeadlineMillis - wall).coerceAtMost(0),
+                        bootCount = bootCount,
+                    )
+                    timer.state == TimerState.RUNNING -> {
+                        val deadline = if (bootChanged) elapsed + timer.wallDeadlineMillis - wall else timer.deadlineElapsedMillis
+                        timer.copy(deadlineElapsedMillis = deadline, wallDeadlineMillis = wall + deadline - elapsed,
+                            bootCount = bootCount)
+                    }
+                    else -> timer
                 }
             }
         }

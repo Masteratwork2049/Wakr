@@ -51,6 +51,7 @@ data class Alarm(
     val isWakeCheckRetry: Boolean = false,
     val missionMuteCount: Int? = null,
     val hasPrivateUnlockMissions: Boolean = false,
+    val ringSoundUri: String? = null,
 ) {
     val isOneShot: Boolean get() = days.isEmpty()
 

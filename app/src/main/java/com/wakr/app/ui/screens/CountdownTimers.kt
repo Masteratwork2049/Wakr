@@ -234,6 +234,6 @@ private fun CountdownDialLayout(
     }
 }
 
-private fun countdownText(seconds: Long): String =
+internal fun countdownText(seconds: Long): String =
     if (seconds >= 3_600) String.format(Locale.getDefault(), "%d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60)
     else String.format(Locale.getDefault(), "%02d:%02d", seconds / 60, seconds % 60)

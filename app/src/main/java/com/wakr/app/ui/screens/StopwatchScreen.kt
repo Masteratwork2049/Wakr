@@ -561,7 +561,7 @@ private fun StopwatchFace(elapsedMillis: Long, running: Boolean, onToggle: () ->
 internal fun StopwatchDial(
     modifier: Modifier,
     turns: () -> Float,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
     selected: Boolean = false,
     content: @Composable () -> Unit,
 ) {
@@ -569,13 +569,13 @@ internal fun StopwatchDial(
     Box(
         modifier = modifier
             .clockLighting(colors.primary, colors.surface.luminance() < .5f)
-            .luminousElasticClickable(
+            .then(if (onClick == null) Modifier else Modifier.luminousElasticClickable(
                 shape = CircleShape,
                 maxStretchPercent = 0.04f,
                 maxTranslateDp = 2.0.dp,
                 luminousRadiusScale = 0.58f,
                 onClick = onClick,
-            )
+            ))
             .clip(CircleShape)
             .background(colors.surfaceContainerLow.copy(alpha = .96f), CircleShape)
             .border(1.25.dp, colors.outline.copy(alpha = if (selected) .58f else .12f), CircleShape),

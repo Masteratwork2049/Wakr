@@ -206,6 +206,18 @@ class WakeStoreTest {
         assertEquals(decoded, parseAlarms(encodeAlarms(listOf(decoded))).single())
     }
 
+    @Test fun legacyRebootRecoveryCountsMigrateToTheSwitch() {
+        for (count in 0..5) {
+            val json = org.json.JSONArray(encodeAlarms(listOf(original)))
+            val wake = json.getJSONObject(0).getJSONObject("wake")
+            wake.remove("rebootRecovery")
+            wake.put("rebootSurvivalMax", count)
+            val decoded = parseAlarms(json.toString()).single()
+            assertEquals(count > 0, decoded.wake.rebootRecovery)
+            assertEquals(decoded, parseAlarms(encodeAlarms(listOf(decoded))).single())
+        }
+    }
+
     @Test fun missionOrderPolicyRegistrationAndHistorySurviveRestartAndDeletion() = runBlocking {
         val code = ScanTarget(ScanKind.BARCODE, "00012345", "Kitchen")
         val types = MissionType.entries.reversed()
@@ -220,10 +232,11 @@ class WakeStoreTest {
             fadeInSeconds = 90, vibrationPattern = VibrationPattern.HEARTBEAT, flashEnabled = true,
             voiceAnnounceEnabled = true, snoozeDurationMin = 4, maxSnoozes = 2,
             shakeToSnooze = true, silenceAfterMin = 0, repeatMissedCount = -1, reRingIntervalMin = 3,
-            deleteAfterDismiss = true, lockBeforeRingMin = 15, rebootSurvivalMax = 2,
+            deleteAfterDismiss = true, lockBeforeRingMin = 15, rebootRecovery = true,
             stillAwakeChecksCount = 2, stillAwakeDelayMin = 8,
         )
-        val alarm = original.copy(wake = options, missions = missions, createdAt = 1500)
+        val alarm = original.copy(wake = options, missions = missions, createdAt = 1500,
+            ringingAt = 3010, ringSoundUri = "content://tracks/2")
         val log = WakeUpLog(99, alarm.id, alarm.label, 3000, 3010, 3300, 1, null, false, WakeOutcome.DISMISSED)
         open(listOf(WakeMigration)) { prefs ->
             val store = ClockStore(prefs)

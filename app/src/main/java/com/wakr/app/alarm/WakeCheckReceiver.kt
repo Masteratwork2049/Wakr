@@ -145,7 +145,7 @@ internal object WakeChecks {
         if (!confirmed) {
             val due = now + 1800
             val retry = check.alarm.copy(id = store.nextId(), enabled = true, pausedByGroup = false, days = emptySet(),
-                ringingAt = null, firstRingAt = null, missionMuteCount = null, missionIndex = 0, missedRetries = 0, snoozeCount = 0,
+                ringingAt = null, firstRingAt = null, ringSoundUri = null, missionMuteCount = null, missionIndex = 0, missedRetries = 0, snoozeCount = 0,
                 rebootCount = 0, skippedOccurrenceDate = null, skippedOccurrenceMillis = null, snoozedUntilMillis = null,
                 isWakeCheckRetry = true, wake = check.alarm.wake.copy(relativeTriggerMillis = due, scheduledDateEpochDay = null,
                     pausedUntilEpochDay = null, deleteAfterDismiss = true, volumePercent = 100, fadeInSeconds = 0,

@@ -124,12 +124,12 @@ object Notifications {
             .setGroup("timer-alerts")
             .setOnlyAlertOnce(true)
             .setDeleteIntent(stop)
-            .setContentIntent(openApp(context, TAB_TIMERS))
+            .setContentIntent(TimerRingActivity.pendingIntent(context, timer.id))
             .addAction(0, "Dismiss", stop)
             .build()
     }
 
-    internal fun timerChimeSummary(context: Context, timer: ClockTimer): android.app.Notification =
+    internal fun timerChimeSummary(context: Context, timer: ClockTimer, openFullScreen: Boolean = true): android.app.Notification =
         NotificationCompat.Builder(context, CHANNEL_ALARM)
             .setSmallIcon(R.drawable.ic_stat_timer)
             .setContentTitle(timer.label)
@@ -137,9 +137,14 @@ object Notifications {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setGroup("timer-alerts")
             .setGroupSummary(true)
-            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)
-            .setContentIntent(openApp(context, TAB_TIMERS))
+            .setOnlyAlertOnce(!openFullScreen)
+            .apply {
+                if (openFullScreen) setFullScreenIntent(TimerRingActivity.pendingIntent(context, timer.id), true)
+            }
+            .setContentIntent(TimerRingActivity.pendingIntent(context, timer.id))
             .addAction(0, "Dismiss", timerAction(context, ClockActionReceiver.ACTION_TIMER_CANCEL, timer.id))
             .build()
 

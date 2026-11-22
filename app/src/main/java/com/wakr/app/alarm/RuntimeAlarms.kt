@@ -21,9 +21,15 @@ internal object RuntimeAlarms {
         .getSharedPreferences("alarm_schedule", Context.MODE_PRIVATE)
     fun unlocked(context: Context) = context.getSystemService(UserManager::class.java).isUserUnlocked
 
+    private fun String?.availableBeforeUnlock(context: Context): String? =
+        takeIf { it == SILENT || it?.startsWith("android.resource://${context.packageName}/") == true }
+
     fun mirror(context: Context, alarm: Alarm) {
         val w = alarm.wake
-        val minimal = alarm.copy(label = "", soundUri = alarm.soundUri?.takeIf { it == SILENT },
+        val directBootSound = alarm.ringSoundUri.availableBeforeUnlock(context)
+        val configuredFallback = alarm.soundUri.availableBeforeUnlock(context)
+            .takeIf { alarm.ringSoundUri == null && w.soundMode == com.wakr.app.core.AlarmSoundMode.ONE }
+        val minimal = alarm.copy(label = "", soundUri = configuredFallback, ringSoundUri = directBootSound,
             hasPrivateUnlockMissions = w.unlockMissions.isNotEmpty() || alarm.hasPrivateUnlockMissions,
             missions = emptyList(), privateMissionCount = maxOf(alarm.ringMissions.size, alarm.privateMissionCount), createdAt = null, wake = WakeOptions(
                 relativeTriggerMillis = w.relativeTriggerMillis, scheduledDateEpochDay = w.scheduledDateEpochDay, pausedUntilEpochDay = w.pausedUntilEpochDay,
@@ -32,7 +38,7 @@ internal object RuntimeAlarms {
                 silenceAfterMin = w.silenceAfterMin, flashEnabled = w.flashEnabled,
                 flashStrobeEnabled = w.flashStrobeEnabled,
                 snoozeDurationMin = w.snoozeDurationMin, maxSnoozes = w.maxSnoozes,
-                rebootSurvivalMax = w.rebootSurvivalMax,
+                rebootRecovery = w.rebootRecovery,
                 lockBeforeRingMin = w.lockBeforeRingMin,
                 muteDurationSec = w.muteDurationSec, emergencyStopEnabled = w.emergencyStopEnabled,
                 maxMutes = w.maxMutes, muteGapSeconds = w.muteGapSeconds,
@@ -57,7 +63,10 @@ internal object RuntimeAlarms {
                 ringingAt = result.ringingAt, missedRetries = result.missedRetries,
                 snoozeCount = result.snoozeCount, missionIndex = result.missionIndex,
                 firstRingAt = result.firstRingAt, rebootCount = result.rebootCount,
-                missionMuteCount = result.missionMuteCount)
+                missionMuteCount = result.missionMuteCount,
+                ringSoundUri = if (result.ringingAt != null || result.snoozedUntilMillis != null) {
+                    result.ringSoundUri ?: a.ringSoundUri.takeIf { a.firstRingAt == result.firstRingAt }
+                } else null)
         } }
         prefs.edit().also { editor -> changes.keys.forEach(editor::remove) }.apply()
     }
@@ -87,5 +96,22 @@ internal object RuntimeAlarms {
             after
         }
     }
+    suspend fun rememberRingSound(context: Context, id: Long, at: Long, prior: String?, source: String): String? =
+        mutex.withLock {
+            if (!unlocked(context)) return@withLock null
+            val store = ClockStore(context)
+            reconcile(context, store)
+            var changed: Alarm? = null
+            val current = store.updateAlarms { alarms ->
+                alarms.map { alarm ->
+                    if (alarm.id == id && alarm.ringingAt == at && alarm.ringSoundUri == prior) {
+                        alarm.copy(ringSoundUri = source).also { changed = it }
+                    } else alarm
+                }
+            }.firstOrNull { it.id == id && it.ringingAt == at }
+            changed?.let { mirror(context, it) }
+            current?.ringSoundUri
+        }
+
     suspend fun settings(context: Context) = if (unlocked(context)) ClockStore(context).settingsNow() else ClockSettings()
 }

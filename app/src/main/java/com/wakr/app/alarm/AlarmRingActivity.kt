@@ -105,17 +105,22 @@ import com.wakr.app.ui.theme.ClockTheme
  * handled by [ClockActionReceiver], so interactivity and dismissal rules match the notification.
  */
 class AlarmRingActivity : ComponentActivity() {
+    private var alertCanReturn = false
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        val sameOccurrence = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L) ==
+            this.intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L) &&
+            intent.getLongExtra(UpcomingAlarm.AT, -1L) == this.intent.getLongExtra(UpcomingAlarm.AT, -1L)
         setIntent(intent)
-        recreate()
+        if (!sameOccurrence) recreate()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        volumeControlStream = android.media.AudioManager.STREAM_ALARM
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -156,6 +161,7 @@ class AlarmRingActivity : ComponentActivity() {
                         delay(350)
                     }
                 }
+                SideEffect { alertCanReturn = alarm != null && !completing && confirmation == null }
                 val current = alarm ?: return@ClockTheme
                 val mission = current.ringMissions.getOrNull(current.missionIndex)
                 val awaitingUnlock = mission == null && current.missionIndex < current.privateMissionCount
@@ -274,21 +280,31 @@ class AlarmRingActivity : ComponentActivity() {
         }
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
+        val at = intent.getLongExtra(UpcomingAlarm.AT, -1L)
+        if (alertCanReturn && !isFinishing && AlarmService.isAlarmRinging(id, at)) {
+            launchAlertIfAllowed(this, screenIntent(this, id, intent.getStringExtra(EXTRA_LABEL).orEmpty(), at))
+        }
+    }
+
     companion object {
         const val EXTRA_LABEL = "label"
 
+        private fun screenIntent(context: Context, id: Long, label: String, at: Long) =
+            Intent(context, AlarmRingActivity::class.java)
+                .setData(android.net.Uri.parse("wakr://ring/$id/$at"))
+                .putExtra(UpcomingAlarm.AT, at)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(AlarmReceiver.EXTRA_ID, id)
+                .putExtra(EXTRA_LABEL, label)
+
         fun intent(context: Context, id: Long, label: String, at: Long): PendingIntent =
-            PendingIntent.getActivity(
-                context,
-                id.toInt(),
-                Intent(context, AlarmRingActivity::class.java)
-                    .setData(android.net.Uri.parse("wakr://ring/$id/$at"))
-                    .putExtra(UpcomingAlarm.AT, at)
-                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    .putExtra(AlarmReceiver.EXTRA_ID, id)
-                    .putExtra(EXTRA_LABEL, label),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
+            PendingIntent.getActivity(context, id.toInt(),
+                screenIntent(context, id, label, at),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
     }
 }
 

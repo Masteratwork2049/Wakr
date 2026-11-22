@@ -6,7 +6,7 @@ internal fun Alarm.preservingDismissal(previous: Alarm?): Alarm {
         previous.time == time && previous.days == days && previous.wake.scheduledDateEpochDay == wake.scheduledDateEpochDay &&
         previous.wake.timeZoneId == wake.timeZoneId
     return copy(snoozedUntilMillis = null, ringingAt = null, missedRetries = 0,
-        snoozeCount = 0, missionIndex = 0, rebootCount = 0, firstRingAt = null, missionMuteCount = null,
+        snoozeCount = 0, missionIndex = 0, rebootCount = 0, firstRingAt = null, missionMuteCount = null, ringSoundUri = null,
         skippedOccurrenceMillis = if (sameOccurrence) previous?.skippedOccurrenceMillis else null,
         skippedOccurrenceDate = if (sameOccurrence) previous?.skippedOccurrenceDate else null)
 }

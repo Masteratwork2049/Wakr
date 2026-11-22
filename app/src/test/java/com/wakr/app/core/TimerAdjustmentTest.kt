@@ -1,5 +1,8 @@
 package com.wakr.app.core
 
+import com.wakr.app.alarm.alertVolumeFloor
+import com.wakr.app.alarm.timerOverdueTurns
+import com.wakr.app.ui.screens.countdownText
 import java.time.Duration
 import org.junit.Assert.*
 import org.junit.Test
@@ -14,6 +17,33 @@ class TimerAdjustmentTest {
             val paused = timer.copy(state = TimerState.PAUSED, pausedRemaining = timer.remaining(pauseAt))
             assertEquals(.5, paused.counterclockwiseProgress(pauseAt + 80_000), 0.0001)
             assertEquals(1.0, timer.counterclockwiseProgress(4_000 + duration), 0.0001)
+        }
+    }
+
+    @Test fun overtimeHandRepeatsEachMinuteWhileTheReadoutKeepsCounting() {
+        assertEquals(0f, timerOverdueTurns(0), .0001f)
+        assertEquals(-.25f, timerOverdueTurns(15_000), .0001f)
+        assertEquals(-59f / 60f, timerOverdueTurns(59_000), .0001f)
+        assertEquals(0f, timerOverdueTurns(60_000), .0001f)
+        assertEquals(-.25f, timerOverdueTurns(75_000), .0001f)
+        assertEquals(0f, timerOverdueTurns(120_000), .0001f)
+        assertEquals("01:02", withEnglishLocale { countdownText(62) })
+        assertEquals("02:00", withEnglishLocale { countdownText(120) })
+    }
+
+    @Test fun ringingVolumeRoundsUpToEightyPercentOnTheDeviceScale() {
+        assertEquals(0, alertVolumeFloor(0))
+        assertEquals(6, alertVolumeFloor(7))
+        assertEquals(12, alertVolumeFloor(15))
+    }
+
+    private fun withEnglishLocale(read: () -> String): String {
+        val previous = java.util.Locale.getDefault()
+        return try {
+            java.util.Locale.setDefault(java.util.Locale.US)
+            read()
+        } finally {
+            java.util.Locale.setDefault(previous)
         }
     }
 

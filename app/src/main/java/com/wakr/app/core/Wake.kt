@@ -41,7 +41,7 @@ data class WakeOptions(
     val reRingIntervalMin: Int = 5,
     val deleteAfterDismiss: Boolean = false,
     val lockBeforeRingMin: Int = 0,
-    val rebootSurvivalMax: Int = 0,
+    val rebootRecovery: Boolean = false,
     val stillAwakeChecksCount: Int = 0,
     val stillAwakeDelayMin: Int = 5,
     val muteDurationSec: Int = 30,
