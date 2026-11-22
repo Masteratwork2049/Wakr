@@ -21,11 +21,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -88,7 +91,7 @@ internal fun CountdownTimers(
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (finished) {
-                        Button(onClick = { onCancel(selected.id) }, modifier = Modifier.weight(1f)) { Text("Dismiss") }
+                        Button(onClick = { onCancel(selected.id) }, modifier = Modifier.fillMaxWidth()) { Text("Dismiss") }
                     } else {
                         FilledTonalButton(onClick = { onPauseResume(selected.id) }, modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(horizontal = 4.dp)) {
@@ -193,28 +196,17 @@ private fun CountdownDialLayout(
                             scaleY = scaleX
                         }
                         .semantics { selected = picked },
-                    turns = { -timer.counterclockwiseProgress(now.value).toFloat() },
+                    turns = { timer.dialTurns(now.value) },
                     onClick = { onSelect(timer.id) },
                     selected = picked,
                 ) {
                     val seconds by remember(timer, now) { derivedStateOf {
-                        (timer.remaining(now.value).toMillis() + 999L) / 1_000L
+                        timer.dialSeconds(now.value)
                     } }
-                    val readout = remember(seconds) { countdownText(seconds) }
-                    val fontSize = with(LocalDensity.current) { (diameter * if (seconds >= 3_600) .115f else .135f).toSp() }
                     Column(Modifier.padding(horizontal = diameter * .12f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        val family = ClockFace.family(opticalSize = 34f, width = 100f, weight = 500, roundness = ClockFace.ROUNDED)
-                        Text(
-                            readout,
-                            fontFamily = family,
-                            fontSize = fontSize,
-                            lineHeight = fontSize,
-                            style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
-                            maxLines = 1,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        TimerDialDigits(seconds, diameter)
                         Crossfade(
-                            if (seconds <= 0) "Time’s up" else timer.label,
+                            timer.label.ifBlank { if (seconds <= 0) "Time’s up" else "" },
                             animationSpec = tween(220),
                             label = "Timer name",
                         ) { name ->
@@ -234,6 +226,34 @@ private fun CountdownDialLayout(
     }
 }
 
-internal fun countdownText(seconds: Long): String =
-    if (seconds >= 3_600) String.format(Locale.getDefault(), "%d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60)
-    else String.format(Locale.getDefault(), "%02d:%02d", seconds / 60, seconds % 60)
+@Composable
+internal fun TimerDialDigits(seconds: Long, diameter: Dp) {
+    val readout = remember(seconds) { countdownText(seconds) }
+    val size = with(LocalDensity.current) {
+        (diameter * when {
+            seconds <= -3_600 -> .105f
+            seconds >= 3_600 -> .115f
+            else -> .135f
+        }).toSp()
+    }
+    val colors = MaterialTheme.colorScheme
+    val ink = when {
+        seconds >= 0 -> colors.primary
+        colors.surfaceContainerLow.luminance() < .5f -> Color(0xFFFF6B6B)
+        else -> Color(0xFFB3261E)
+    }
+    Text(readout, color = ink, fontSize = size, lineHeight = size,
+        fontFamily = ClockFace.family(opticalSize = 34f, width = 100f, weight = 500, roundness = ClockFace.ROUNDED),
+        style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
+        maxLines = 1)
+}
+
+internal fun countdownText(seconds: Long): String {
+    val magnitude = kotlin.math.abs(seconds)
+    val display = if (magnitude >= 3_600) {
+        String.format(Locale.getDefault(), "%d:%02d:%02d", magnitude / 3_600, magnitude / 60 % 60, magnitude % 60)
+    } else {
+        String.format(Locale.getDefault(), "%02d:%02d", magnitude / 60, magnitude % 60)
+    }
+    return if (seconds < 0) "−$display" else display
+}

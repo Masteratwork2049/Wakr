@@ -211,11 +211,30 @@ data class ClockTimer(
         return sweepAnchor + (1.0 - sweepAnchor) * (1.0 - fraction)
     }
 
+    private fun overdueMillis(nowElapsedMillis: Long): Long =
+        if (state == TimerState.RUNNING || state == TimerState.FINISHED) {
+            (nowElapsedMillis - deadlineElapsedMillis).coerceAtLeast(0L)
+        } else 0L
+
+    internal fun dialSeconds(nowElapsedMillis: Long): Long {
+        val overdue = overdueMillis(nowElapsedMillis)
+        return if (overdue > 0) -(overdue / 1_000L)
+        else (remaining(nowElapsedMillis).toMillis() + 999L) / 1_000L
+    }
+
+    internal fun dialTurns(nowElapsedMillis: Long): Float {
+        val overdue = overdueMillis(nowElapsedMillis)
+        return if (overdue > 0) timerOverdueTurns(overdue) else -counterclockwiseProgress(nowElapsedMillis).toFloat()
+    }
+
     fun fractionLeft(nowElapsedMillis: Long): Float {
         val t = total.toMillis().coerceAtLeast(1L)
         return (remaining(nowElapsedMillis).toMillis().toFloat() / t).coerceIn(0f, 1f)
     }
 }
+
+internal fun timerOverdueTurns(overdueMillis: Long): Float =
+    -(overdueMillis.coerceAtLeast(0L) % 60_000L) / 60_000f
 
 internal fun List<ClockTimer>.numberByPosition(): List<ClockTimer> =
     mapIndexed { index, timer ->

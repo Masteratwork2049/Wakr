@@ -124,13 +124,14 @@ object Notifications {
             .setGroup("timer-alerts")
             .setOnlyAlertOnce(true)
             .setDeleteIntent(stop)
-            .setContentIntent(TimerRingActivity.pendingIntent(context, timer.id))
+            .setContentIntent(openExpiredTimer(context, timer.id))
             .addAction(0, "Dismiss", stop)
             .build()
     }
 
-    internal fun timerChimeSummary(context: Context, timer: ClockTimer, openFullScreen: Boolean = true): android.app.Notification =
-        NotificationCompat.Builder(context, CHANNEL_ALARM)
+    internal fun timerChimeSummary(context: Context, timer: ClockTimer, openFullScreen: Boolean = true): android.app.Notification {
+        val showFullScreen = openFullScreen && canPresentTimerAlert(context)
+        return NotificationCompat.Builder(context, CHANNEL_ALARM)
             .setSmallIcon(R.drawable.ic_stat_timer)
             .setContentTitle(timer.label)
             .setContentText("Time’s up")
@@ -140,13 +141,18 @@ object Notifications {
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)
-            .setOnlyAlertOnce(!openFullScreen)
+            .setOnlyAlertOnce(!showFullScreen)
             .apply {
-                if (openFullScreen) setFullScreenIntent(TimerRingActivity.pendingIntent(context, timer.id), true)
+                if (showFullScreen) setFullScreenIntent(TimerRingActivity.pendingIntent(context, timer.id, automatic = true), true)
             }
-            .setContentIntent(TimerRingActivity.pendingIntent(context, timer.id))
+            .setContentIntent(openExpiredTimer(context, timer.id))
             .addAction(0, "Dismiss", timerAction(context, ClockActionReceiver.ACTION_TIMER_CANCEL, timer.id))
             .build()
+    }
+
+    private fun openExpiredTimer(context: Context, id: Long): PendingIntent =
+        if (canPresentTimerAlert(context)) TimerRingActivity.pendingIntent(context, id)
+        else openApp(context, TAB_TIMERS)
 
     internal fun timerAction(context: Context, action: String, id: Long): PendingIntent =
         PendingIntent.getBroadcast(context, 20,

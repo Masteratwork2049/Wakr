@@ -507,8 +507,9 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
 
                     Tab.TIMERS -> {
                         val timers by vm.timers.collectAsStateWithLifecycle()
-                        val now = rememberElapsedTicker(active = timers.any { it.state == com.wakr.app.core.TimerState.RUNNING }
-                            && pagerState.currentPage == Tab.TIMERS.ordinal && !showSettings)
+                        val now = rememberElapsedTicker(active = timers.any {
+                            it.state == com.wakr.app.core.TimerState.RUNNING || it.state == com.wakr.app.core.TimerState.FINISHED
+                        } && pagerState.currentPage == Tab.TIMERS.ordinal && !showSettings)
                         TimersScreen(
                             timers = timers,
                             draft = vm.draftDuration,

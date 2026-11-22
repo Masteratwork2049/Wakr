@@ -200,9 +200,8 @@ class AlarmService : Service() {
         stopEffects()
         soundUnlockJob?.cancel()
         sound.onStarted = null
-        ring(Notifications.timerChimeSummary(this, next), settings.timers.soundUri,
-            settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
-        if (mainActivityVisible) launchAlertIfAllowed(this, TimerRingActivity.screenIntent(this, next.id))
+        ring(Notifications.timerChimeSummary(this, next),
+            settings.timers.soundUri, settings.timers.vibrate, TIMER_PATTERN, settings.alarms.silenceAfterMinutes)
     }
 
     private fun ring(notification: android.app.Notification, uri: String?, shouldVibrate: Boolean,
@@ -476,7 +475,7 @@ class AlarmService : Service() {
 
         internal var stopPreview: (() -> Unit)? = null
 
-        internal var mainActivityVisible = false
+        @Volatile internal var mainActivityVisible = false
 
         internal fun isAlarmRinging(id: Long, at: Long) =
             current?.let { it.active && it.occurrence == (id to at) } == true

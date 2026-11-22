@@ -1,12 +1,14 @@
 package com.wakr.app.alarm
 
 import android.app.ActivityOptions
+import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -25,7 +27,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,8 +40,7 @@ import com.wakr.app.data.ClockStore
 import com.wakr.app.data.DarkMode
 import com.wakr.app.ui.rememberElapsedTicker
 import com.wakr.app.ui.screens.StopwatchDial
-import com.wakr.app.ui.screens.countdownText
-import com.wakr.app.ui.theme.ClockFace
+import com.wakr.app.ui.screens.TimerDialDigits
 import com.wakr.app.ui.theme.ClockTheme
 import kotlinx.coroutines.launch
 
@@ -51,6 +51,10 @@ class TimerRingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra(EXTRA_AUTOMATIC, false) && !canPresentTimerAlert(this)) {
+            finish()
+            return
+        }
         requestedId = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -100,6 +104,7 @@ class TimerRingActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_AUTOMATIC, false) && !canPresentTimerAlert(this)) return
         setIntent(intent)
         requestedId = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
     }
@@ -107,42 +112,49 @@ class TimerRingActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val id = displayedId
-        if (id != null && !dismissing && !isFinishing && AlarmService.isTimerChiming(id)) {
-            launchAlertIfAllowed(this, screenIntent(this, id))
+        if (id != null && !dismissing && !isFinishing && canPresentTimerAlert(this) && AlarmService.isTimerChiming(id)) {
+            launchAlertIfAllowed(this, screenIntent(this, id, automatic = true))
         }
     }
 
     override fun onStop() {
         super.onStop()
         val id = displayedId
-        if (id != null && !dismissing && !isFinishing && !isChangingConfigurations && AlarmService.isTimerChiming(id)) {
-            sendAlertReturn(this, pendingIntent(this, id))
+        if (id != null && !dismissing && !isFinishing && !isChangingConfigurations &&
+            canPresentTimerAlert(this) && AlarmService.isTimerChiming(id)
+        ) {
+            sendAlertReturn(this, pendingIntent(this, id, automatic = true))
         }
     }
 
     companion object {
-        internal fun screenIntent(context: Context, id: Long) =
+        private const val EXTRA_AUTOMATIC = "automatic"
+
+        private fun screenIntent(context: Context, id: Long, automatic: Boolean) =
             Intent(context, TimerRingActivity::class.java)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .setData(android.net.Uri.parse("wakr://timer-alert/$id/$automatic"))
                 .putExtra(AlarmReceiver.EXTRA_ID, id)
+                .putExtra(EXTRA_AUTOMATIC, automatic)
 
-        internal fun pendingIntent(context: Context, id: Long): PendingIntent =
-            alertActivityIntent(context, id.toInt(),
-                screenIntent(context, id).setData(android.net.Uri.parse("wakr://timer-alert/$id")))
+        internal fun pendingIntent(context: Context, id: Long, automatic: Boolean = false): PendingIntent =
+            alertActivityIntent(context, id.toInt(), screenIntent(context, id, automatic))
     }
 }
 
 /** The oldest deadline owns the screen and audio when several timers expire together. */
 internal val timerAlertOrder = compareBy<ClockTimer>({ it.deadlineElapsedMillis }, { it.id })
 
-internal fun timerOverdueTurns(overdueMillis: Long): Float =
-    -(overdueMillis.coerceAtLeast(0L) % 60_000L) / 60_000f
+internal fun canPresentTimerAlert(context: Context): Boolean =
+    !AlarmService.mainActivityVisible ||
+        context.getSystemService(KeyguardManager::class.java).isKeyguardLocked ||
+        !context.getSystemService(PowerManager::class.java).isInteractive
 
 @Composable
 internal fun TimerExpiredScreen(timer: ClockTimer, onDismiss: () -> Unit) {
     val now = rememberElapsedTicker()
     val seconds by remember(timer) {
-        derivedStateOf { (now.value - timer.deadlineElapsedMillis).coerceAtLeast(0L) / 1_000L }
+        derivedStateOf { timer.dialSeconds(now.value) }
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)
         .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -152,18 +164,12 @@ internal fun TimerExpiredScreen(timer: ClockTimer, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically)) {
             StopwatchDial(
                 modifier = Modifier.size(dialSize),
-                turns = { timerOverdueTurns(now.value - timer.deadlineElapsedMillis) },
+                turns = { timer.dialTurns(now.value) },
                 selected = true,
             ) {
-                val readout = remember(seconds) { if (seconds > 0) "−" + countdownText(seconds) else countdownText(0) }
-                val readoutColor = if (seconds > 0) Color(0xFFFF6B6B) else MaterialTheme.colorScheme.primary
-                val size = with(LocalDensity.current) { (dialSize * if (seconds >= 3_600) .105f else .135f).toSp() }
                 Column(Modifier.padding(horizontal = dialSize * .12f),
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(readout, color = readoutColor, fontSize = size, lineHeight = size,
-                        fontFamily = ClockFace.family(opticalSize = 34f, width = 100f, weight = 500, roundness = ClockFace.ROUNDED),
-                        style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
-                        maxLines = 1)
+                    TimerDialDigits(seconds, dialSize)
                     Text(timer.label.ifBlank { "Time’s up" }, color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
                         overflow = TextOverflow.Ellipsis, maxLines = 1)

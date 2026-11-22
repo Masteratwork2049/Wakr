@@ -1,7 +1,6 @@
 package com.wakr.app.core
 
 import com.wakr.app.alarm.alertVolumeFloor
-import com.wakr.app.alarm.timerOverdueTurns
 import com.wakr.app.ui.screens.countdownText
 import java.time.Duration
 import org.junit.Assert.*
@@ -27,8 +26,19 @@ class TimerAdjustmentTest {
         assertEquals(0f, timerOverdueTurns(60_000), .0001f)
         assertEquals(-.25f, timerOverdueTurns(75_000), .0001f)
         assertEquals(0f, timerOverdueTurns(120_000), .0001f)
-        assertEquals("01:02", withEnglishLocale { countdownText(62) })
-        assertEquals("02:00", withEnglishLocale { countdownText(120) })
+        val finished = ClockTimer(1, "Test", Duration.ofMinutes(15), TimerState.FINISHED, 30_000)
+        val other = finished.copy(id = 2, deadlineElapsedMillis = 100_000)
+        val waitingForExpiryCallback = finished.copy(state = TimerState.RUNNING)
+        assertEquals(1L, waitingForExpiryCallback.dialSeconds(29_999))
+        assertEquals(0L, waitingForExpiryCallback.dialSeconds(30_000))
+        assertEquals(-1L, waitingForExpiryCallback.dialSeconds(31_000))
+        assertEquals("−00:59", withEnglishLocale { countdownText(finished.dialSeconds(89_999)) })
+        assertEquals("−01:00", withEnglishLocale { countdownText(finished.dialSeconds(90_000)) })
+        assertEquals("−01:02", withEnglishLocale { countdownText(finished.dialSeconds(92_000)) })
+        assertEquals("−02:00", withEnglishLocale { countdownText(finished.dialSeconds(150_000)) })
+        assertEquals("−00:50", withEnglishLocale { countdownText(other.dialSeconds(150_000)) })
+        assertEquals(0f, finished.dialTurns(90_000), .0001f)
+        assertEquals(-.25f, finished.dialTurns(105_000), .0001f)
     }
 
     @Test fun ringingVolumeRoundsUpToEightyPercentOnTheDeviceScale() {
