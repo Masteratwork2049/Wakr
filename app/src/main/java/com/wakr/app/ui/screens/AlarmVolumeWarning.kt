@@ -79,14 +79,15 @@ internal class AlarmVolumeWarningState(private val audio: AudioManager) {
 }
 
 @Composable
-internal fun rememberAlarmVolumeWarning(): AlarmVolumeWarningState? {
+internal fun rememberAlarmVolumeWarning(active: Boolean): AlarmVolumeWarningState? {
     val context = LocalContext.current
     val audio = remember(context) { context.getSystemService(AudioManager::class.java) } ?: return null
     val state = remember(audio) { AlarmVolumeWarningState(audio) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // The system sliders can change without Wakr losing focus. Read the actual stream while
     // Alarms is visible so the banner also follows manual changes on those devices.
-    LaunchedEffect(state, lifecycle) {
+    LaunchedEffect(state, lifecycle, active) {
+        if (!active) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 state.refresh()

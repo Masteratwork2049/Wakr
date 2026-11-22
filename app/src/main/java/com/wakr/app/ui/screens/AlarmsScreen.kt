@@ -3,6 +3,9 @@ package com.wakr.app.ui.screens
 
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +17,9 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateIntAsState
@@ -221,6 +227,8 @@ private const val DAY_CAP_DP = 23f
 private const val DAY_BLOCK_DP = 91f
 /** The constant slice of space between letters. The scale is derived from it, not tuned. */
 private const val DAY_TRACKING_DP = 2.2f
+private const val VOLUME_WARNING_ENTER_MS = 260
+private const val VOLUME_WARNING_EXIT_MS = 220
 
 @Composable
 fun AlarmsScreen(
@@ -245,7 +253,7 @@ fun AlarmsScreen(
     widePane: Boolean = false,
     watchAlarmVolume: Boolean = true,
 ) {
-    val volumeWarning = if (watchAlarmVolume) rememberAlarmVolumeWarning() else null
+    val volumeWarning = rememberAlarmVolumeWarning(watchAlarmVolume)
     // Track how many cards are revealed during first-launch post-onboarding stagger
     var visibleCardsCount by remember(staggerEntranceToken) {
         mutableIntStateOf(if (staggerEntranceToken > 0) 0 else Int.MAX_VALUE)
@@ -371,15 +379,35 @@ fun AlarmsScreen(
         val direction = LocalLayoutDirection.current
         val start = contentPadding.calculateStartPadding(direction)
         val end = contentPadding.calculateEndPadding(direction)
-        val showWarning = volumeWarning?.isLow == true
-        val panelPadding = if (showWarning) {
-            PaddingValues(start = start, end = end, bottom = contentPadding.calculateBottomPadding())
-        } else contentPadding
+        val top = contentPadding.calculateTopPadding()
+        val volumeWarningVisibility = remember { MutableTransitionState(false) }
+        volumeWarningVisibility.targetState = watchAlarmVolume && volumeWarning?.isLow == true
+        val volumeWarningMotion = rememberTransition(volumeWarningVisibility, label = "Alarm volume warning")
+        // Share the top inset between the banner and scroll content so it never jumps or doubles.
+        val panelTop by volumeWarningMotion.animateDp(
+            transitionSpec = {
+                tween(if (targetState) VOLUME_WARNING_ENTER_MS else VOLUME_WARNING_EXIT_MS, easing = FastOutSlowInEasing)
+            },
+            label = "Alarm content top inset",
+        ) { visible -> if (visible) 0.dp else top }
+        val panelPadding = PaddingValues(
+            start = start, top = panelTop, end = end, bottom = contentPadding.calculateBottomPadding(),
+        )
         Column(Modifier.fillMaxSize()) {
-            if (showWarning && volumeWarning != null) {
-                AlarmVolumeWarning(
+            volumeWarningMotion.AnimatedVisibility(
+                visible = { it },
+                enter = expandVertically(
+                    animationSpec = tween(VOLUME_WARNING_ENTER_MS, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Top,
+                ) + fadeIn(tween(200)),
+                exit = shrinkVertically(
+                    animationSpec = tween(VOLUME_WARNING_EXIT_MS, easing = FastOutSlowInEasing),
+                    shrinkTowards = Alignment.Top,
+                ) + fadeOut(tween(150)),
+            ) {
+                if (volumeWarning != null) AlarmVolumeWarning(
                     volumeWarning,
-                    Modifier.padding(start = start, top = contentPadding.calculateTopPadding(), end = end, bottom = 12.dp),
+                    Modifier.padding(start = start, top = top, end = end, bottom = 12.dp),
                 )
             }
             AnimatedContent(
