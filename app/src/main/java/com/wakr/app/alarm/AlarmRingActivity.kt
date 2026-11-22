@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -61,6 +62,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import com.wakr.app.core.Alarm
+import com.wakr.app.core.WakeOptions
 import com.wakr.app.core.canSnooze
 import com.wakr.app.core.ringMissions
 import com.wakr.app.ui.missions.MissionChallenge
@@ -160,7 +162,7 @@ class AlarmRingActivity : ComponentActivity() {
                 var showMission by rememberSaveable(id, at) { mutableStateOf(false) }
                 val missionStates = rememberSaveableStateHolder()
                 val muteState by AlarmService.mute.collectAsStateWithLifecycle()
-                val muteLabel = timedMuteLabel(current.wake, muteState?.takeIf { it.occurrence == (id to at) })
+                val muteControl = timedMuteControl(current.wake, muteState?.takeIf { it.occurrence == (id to at) })
                 val canOpenMission = mission != null || awaitingUnlock
                 BackHandler(enabled = showMission && canOpenMission && !completing && confirmation == null) {
                     showMission = false
@@ -229,7 +231,7 @@ class AlarmRingActivity : ComponentActivity() {
                                             if (snooze != null) RingActionPill(
                                                 "Snooze · $snoozeMinutes min", Icons.Outlined.Snooze, onAction = snooze,
                                             )
-                                            AlarmSoundActions(muteLabel, mute, emergency)
+                                            AlarmSoundActions(muteControl, mute, emergency)
                                         },
                                     ) {
                                         if (mission == null) {
@@ -258,7 +260,7 @@ class AlarmRingActivity : ComponentActivity() {
                                         }
                                     }
                                 } else {
-                                    AlarmRingingScreen(name, snoozeMinutes, snooze, canOpenMission, muteLabel, mute, emergency) { origin ->
+                                    AlarmRingingScreen(name, snoozeMinutes, snooze, canOpenMission, muteControl, mute, emergency) { origin ->
                                         if (canOpenMission) showMission = true
                                         else scope.launch { closeRing(ClockActionReceiver.ACTION_DISMISS, origin) }
                                     }
@@ -296,7 +298,7 @@ internal fun AlarmRingingScreen(
     snoozeMinutes: Int,
     onSnooze: ((Offset) -> Unit)?,
     hasMission: Boolean,
-    muteLabel: String?,
+    muteControl: MuteControl?,
     onMute: () -> Unit,
     onEmergency: ((Offset) -> Unit)?,
     previewTime: java.time.LocalTime? = null,
@@ -324,7 +326,7 @@ internal fun AlarmRingingScreen(
                     if (onSnooze != null) RingActionPill(
                         "Snooze · $snoozeMinutes min", Icons.Outlined.Snooze, onAction = onSnooze,
                     )
-                    AlarmSoundActions(muteLabel, onMute, onEmergency)
+                    AlarmSoundActions(muteControl, onMute, onEmergency)
                 }
             }.single().measure(loose)
             val gap = 12.dp.roundToPx()
@@ -384,36 +386,35 @@ internal fun RingingClockReadout(
 }
 
 @Composable
-internal fun timedMuteLabel(wake: com.wakr.app.core.WakeOptions, mute: AlarmMute?): String? {
-    if (wake.muteDurationSec == 0 || wake.maxMutes == 0) return null
-    if (mute == null) return "Mute · ${wake.muteDurationSec}s"
-    val until = mute.untilElapsedMs
-    val deadline = until ?: mute.availableAgainAtElapsedMs ?: return null
+internal fun timedMuteControl(wake: WakeOptions, mute: AlarmMute?): MuteControl? {
+    val deadline = mute?.untilElapsedMs ?: mute?.availableAgainAtElapsedMs
+    if (deadline == null) return wake.muteControl(mute, SystemClock.elapsedRealtime())
     return key(deadline) {
-        val remaining by produceState((deadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L), deadline) {
+        val now by produceState(SystemClock.elapsedRealtime(), deadline) {
             while (true) {
-                value = (deadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L)
-                if (value == 0L) break
-                delay(if (until == null) value else (value - 1) % 1_000 + 1)
+                value = SystemClock.elapsedRealtime()
+                val remaining = deadline - value
+                if (remaining <= 0) break
+                delay((remaining - 1) % 1_000 + 1)
             }
         }
-        if (until != null && remaining > 0) "Unmute · ${(remaining + 999) / 1_000}s"
-        else if (until == null && remaining == 0L) "Mute · ${wake.muteDurationSec}s" else null
+        wake.muteControl(mute, now)
     }
 }
 
 @Composable
-internal fun AlarmSoundActions(muteLabel: String?, onMute: () -> Unit, onEmergency: ((Offset) -> Unit)?) {
-    var lastLabel by remember { mutableStateOf("Mute") }
-    SideEffect { if (muteLabel != null) lastLabel = muteLabel }
+internal fun AlarmSoundActions(muteControl: MuteControl?, onMute: () -> Unit, onEmergency: ((Offset) -> Unit)?) {
+    var lastControl by remember { mutableStateOf(MuteControl("Mute")) }
+    SideEffect { if (muteControl != null) lastControl = muteControl }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        AnimatedVisibility(visible = muteLabel != null, enter = fadeIn() + expandVertically(),
+        AnimatedVisibility(visible = muteControl != null, enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()) {
-            val title = muteLabel ?: lastLabel
+            val control = muteControl ?: lastControl
             RingActionPill(
-                title = title,
-                icon = if (title.startsWith("Unmute")) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                title = control.label,
+                icon = if (control.isMuted) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                enabled = muteControl?.enabled == true,
                 onAction = { onMute() },
             )
         }

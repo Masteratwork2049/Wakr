@@ -83,7 +83,7 @@ internal fun AlarmPreview(alarm: Alarm, onEnd: () -> Unit) {
         if (confirmation == null) audio.resume()
         mute = mute?.ended(wake, SystemClock.elapsedRealtime())
     }
-    val muteLabel = timedMuteLabel(wake, mute)
+    val muteControl = timedMuteControl(wake, mute)
     val onMute = {
         val now = SystemClock.elapsedRealtime()
         val previous = mute
@@ -114,7 +114,7 @@ internal fun AlarmPreview(alarm: Alarm, onEnd: () -> Unit) {
                         onBack = { showMission = false },
                         actions = {
                             if (snooze != null) RingActionPill("Snooze · $snoozeMinutes min", Icons.Outlined.Snooze, onAction = snooze)
-                            AlarmSoundActions(muteLabel, onMute, emergency)
+                            AlarmSoundActions(muteControl, onMute, emergency)
                         },
                     ) {
                         key(index) {
@@ -125,7 +125,7 @@ internal fun AlarmPreview(alarm: Alarm, onEnd: () -> Unit) {
                         }
                     }
                 } else {
-                    AlarmRingingScreen(label, snoozeMinutes, snooze, mission != null, muteLabel, onMute, emergency,
+                    AlarmRingingScreen(label, snoozeMinutes, snooze, mission != null, muteControl, onMute, emergency,
                         previewTime = alarm.time) { origin ->
                         if (mission != null) showMission = true else complete(RingConfirmation(null, origin))
                     }

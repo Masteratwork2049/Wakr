@@ -21,3 +21,21 @@ internal fun WakeOptions.canBeginMute(mute: AlarmMute?, now: Long): Boolean =
         (mute == null || mute.untilElapsedMs == null &&
             mute.availableAgainAtElapsedMs?.let { now >= it } == true &&
             maxMutes?.let { mute.used < it } != false)
+
+internal data class MuteControl(
+    val label: String,
+    val enabled: Boolean = true,
+    val isMuted: Boolean = false,
+)
+
+internal fun WakeOptions.muteControl(mute: AlarmMute?, now: Long): MuteControl? {
+    if (muteDurationSec <= 0 || maxMutes == 0) return null
+    mute?.untilElapsedMs?.let { deadline ->
+        val seconds = ((deadline - now + 999) / 1_000).coerceAtLeast(1)
+        return MuteControl("Unmute · ${seconds}s", isMuted = true)
+    }
+    if (canBeginMute(mute, now)) return MuteControl("Mute · ${muteDurationSec}s")
+    val againAt = mute?.availableAgainAtElapsedMs ?: return null
+    val seconds = (againAt - now + 999) / 1_000
+    return if (seconds > 0) MuteControl("You can mute in $seconds secs", enabled = false) else null
+}

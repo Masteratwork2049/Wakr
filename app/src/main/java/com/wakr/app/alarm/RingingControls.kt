@@ -35,18 +35,23 @@ internal fun RingActionPill(
     title: String,
     icon: ImageVector,
     primary: Boolean = false,
+    enabled: Boolean = true,
     onAction: (Offset) -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
     var center by remember { mutableStateOf(Offset.Zero) }
     val modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).onGloballyPositioned {
         center = it.localToRoot(Offset(it.size.width / 2f, it.size.height / 2f))
     }
     val onClick = { onAction(center) }
-    if (primary) Button(onClick = onClick, modifier = modifier) {
+    if (primary) Button(onClick = onClick, enabled = enabled, modifier = modifier) {
         RingPillLabel(icon, title, LocalContentColor.current)
-    } else OutlinedButton(onClick = onClick, modifier = modifier) {
-        RingPillLabel(icon, title, colors.onSurface)
+    } else OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+    ) {
+        RingPillLabel(icon, title, LocalContentColor.current)
     }
 }
 

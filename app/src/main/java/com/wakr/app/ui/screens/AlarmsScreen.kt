@@ -464,6 +464,7 @@ fun AlarmsScreen(
         val deletableIds = alarms.filter { it.id in selectedIds }.mapTo(mutableSetOf()) { it.id }
         DeleteItemsConfirmationSheet(
             count = deletableIds.size,
+            deleteContentColor = Color.Black,
             onDismiss = { showDeleteConfirmSheet = false },
             onConfirmDelete = {
                 selectedIds = emptySet()
@@ -1046,7 +1047,9 @@ internal fun DeleteItemsConfirmationSheet(
     onDismiss: () -> Unit,
     onConfirmDelete: () -> Unit,
     itemName: String = "alarm",
+    deleteContentColor: Color = Color.White,
 ) {
+    val deleteRed = MaterialTheme.colorScheme.error
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
@@ -1084,7 +1087,7 @@ internal fun DeleteItemsConfirmationSheet(
                 Icon(
                     Icons.Outlined.Delete,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = deleteRed,
                     modifier = Modifier.size(32.dp),
                 )
             }
@@ -1114,7 +1117,7 @@ internal fun DeleteItemsConfirmationSheet(
                     .fillMaxWidth()
                     .height(52.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.error)
+                    .background(deleteRed)
                     .elasticClickable {
                         closeThen(onConfirmDelete)
                     },
@@ -1123,7 +1126,7 @@ internal fun DeleteItemsConfirmationSheet(
                 Text(
                     "Delete",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
+                    color = deleteContentColor,
                 )
             }
 
