@@ -81,6 +81,8 @@ private fun MissionListSection(
                 Column(Modifier.padding(8.dp)) {
                     AlarmOptionRow(mission.type.title, Icons.Outlined.Edit, mission.target?.label ?: when (mission.type) {
                         MissionType.PUZZLE -> mission.puzzleMode
+                        MissionType.FOCUS_TAP -> boardSizeLabel(mission.focusBoardSize)
+                        MissionType.TYPING -> typingDifficultyLabel(mission.difficulty)
                         MissionType.MATH, MissionType.MEMORY -> "${mission.roundsOrCount} · ${mission.difficulty.name.lowercase().replaceFirstChar(Char::uppercase)}"
                         else -> null
                     }) { edit = mission }
@@ -177,10 +179,21 @@ private fun MissionEditor(initial: AlarmMission, onClose: () -> Unit, save: (Ala
                     mission = mission.copy(roundsOrCount = it)
                 }
                 if (math) Text("Example · " + mathProblem(mission.difficulty, kotlin.random.Random(12)).expression)
-                else NumberChoice("Board size", mission.memoryBoardSize, listOf(3, 4, 5), { "${it}×$it" }) { size ->
-                    val config = runCatching { JSONObject(mission.configJson) }.getOrElse { JSONObject() }
-                    mission = mission.copy(configJson = config.put("boardSize", size).toString())
+            }
+            when (initial.type) {
+                MissionType.MEMORY, MissionType.FOCUS_TAP -> {
+                    val memory = initial.type == MissionType.MEMORY
+                    val current = if (memory) mission.memoryBoardSize else mission.focusBoardSize
+                    val sizes = if (memory) listOf(3, 4, 5) else listOf(3, 4)
+                    NumberChoice("Board size", current, sizes, ::boardSizeLabel) { size ->
+                        val config = runCatching { JSONObject(mission.configJson) }.getOrElse { JSONObject() }
+                        mission = mission.copy(configJson = config.put("boardSize", size).toString())
+                    }
                 }
+                MissionType.TYPING -> ChoiceRow(
+                    "Challenge difficulty", mission.difficulty, MissionDifficulty.entries, ::typingDifficultyLabel,
+                ) { mission = mission.copy(difficulty = it) }
+                else -> Unit
             }
             if (initial.type == MissionType.PUZZLE) {
                 ChoiceRow("Puzzle type", mission.puzzleMode, listOf("Sliding tiles", "Numbers in order", "Trace pattern"), { it }) {
@@ -205,6 +218,11 @@ private fun MissionEditor(initial: AlarmMission, onClose: () -> Unit, save: (Ala
         }) { Text("Save") }
     }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
 }
+
+private fun boardSizeLabel(size: Int) = "${size}×$size"
+
+private fun typingDifficultyLabel(difficulty: MissionDifficulty): String =
+    "${difficulty.name.lowercase().replaceFirstChar(Char::uppercase)} · ${difficulty.typingWordCount} words"
 
 @Composable
 private fun WakeBehaviorOptions(

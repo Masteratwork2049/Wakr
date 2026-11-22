@@ -28,8 +28,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.wakr.app.core.*
 import kotlinx.coroutines.delay
 import org.json.JSONObject
@@ -50,7 +52,20 @@ internal val AlarmMission.puzzleMode: String
     get() = runCatching { JSONObject(configJson).optString("puzzle", "Numbers in order") }.getOrDefault("Numbers in order")
 
 internal val AlarmMission.memoryBoardSize: Int
-    get() = runCatching { JSONObject(configJson).optInt("boardSize", 3) }.getOrDefault(3).coerceIn(3, 5)
+    get() = savedBoardSize.coerceIn(3, 5)
+
+internal val AlarmMission.focusBoardSize: Int
+    get() = if (savedBoardSize == 4) 4 else 3
+
+private val AlarmMission.savedBoardSize: Int
+    get() = runCatching { JSONObject(configJson).optInt("boardSize", 3) }.getOrDefault(3)
+
+internal val MissionDifficulty.typingWordCount: Int
+    get() = when (this) {
+        MissionDifficulty.EASY -> 5
+        MissionDifficulty.MEDIUM -> 10
+        MissionDifficulty.HARD -> 20
+    }
 
 @Composable
 internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFallback: Boolean = false, onPass: () -> Unit) {
@@ -68,9 +83,9 @@ internal fun MissionChallenge(mission: AlarmMission, seed: Long, allowScannerFal
             when (mission.type) {
                 MissionType.MATH -> MathChallenge(mission, seed, ::pass)
                 MissionType.MEMORY -> MemoryChallenge(mission, seed, ::pass)
-                MissionType.FOCUS_TAP -> FocusChallenge(seed, ::pass)
+                MissionType.FOCUS_TAP -> FocusChallenge(mission.focusBoardSize, seed, ::pass)
                 MissionType.PUZZLE -> PuzzleChallenge(mission, seed, ::pass)
-                MissionType.TYPING -> TypingChallenge(seed, ::pass)
+                MissionType.TYPING -> TypingChallenge(mission.difficulty, seed, ::pass)
                 MissionType.QR, MissionType.NFC -> {
                     val target = mission.target
                     var fallback by rememberSaveable { mutableStateOf(false) }
@@ -284,11 +299,12 @@ private fun MemoryChallenge(mission: AlarmMission, seed: Long, pass: () -> Unit)
 }
 
 @Composable
-private fun FocusChallenge(seed: Long, pass: () -> Unit) {
+private fun FocusChallenge(boardSize: Int, seed: Long, pass: () -> Unit) {
+    val cells = boardSize * boardSize
     var hit by rememberSaveable { mutableIntStateOf(0) }
     var frame by rememberSaveable { mutableIntStateOf(0) }
     var visible by remember { mutableStateOf(true) }
-    val target = remember(frame) { Random(seed + frame).nextInt(9) }
+    val target = remember(frame, cells) { Random(seed + frame).nextInt(cells) }
     LaunchedEffect(frame) {
         visible = true
         delay(1500)
@@ -297,7 +313,12 @@ private fun FocusChallenge(seed: Long, pass: () -> Unit) {
         frame++
     }
     Text("Tap the diamond · ${hit.coerceAtMost(5)} of 5")
-    TileGrid(List(9) { if (!visible) " " else if (it == target) "◆" else "●" }, enabled = visible) {
+    TileGrid(
+        labels = List(cells) { if (!visible) " " else if (it == target) "◆" else "●" },
+        enabled = visible,
+        columns = boardSize,
+        symbolSize = if (boardSize == 4) 24.sp else 30.sp,
+    ) {
         if (it == target) {
             if (++hit == 5) pass()
         } else hit = 0
@@ -372,10 +393,28 @@ private fun TracePattern(pattern: List<Int>, pass: () -> Unit) {
     }
 }
 
+private val typingPhrases = mapOf(
+    MissionDifficulty.EASY to listOf(
+        "One step starts the day",
+        "The sky is getting brighter",
+        "A quiet morning begins here",
+    ),
+    MissionDifficulty.MEDIUM to listOf(
+        "A little light slips through the curtains as morning arrives",
+        "The kettle whistles while the first birds sing outside again",
+        "I open the window and let the cool air in",
+    ),
+    MissionDifficulty.HARD to listOf(
+        "I opened the window to hear the birds outside and watched the morning light spread slowly across the kitchen floor",
+        "The early bus rolled past the park while I waited with a warm cup of tea and watched the sunrise",
+        "We packed our bags before breakfast and walked down the quiet street as the bakery opened its doors for business",
+    ),
+)
+
 @Composable
-private fun TypingChallenge(seed: Long, pass: () -> Unit) {
-    val phrase = remember { listOf("A quiet morning begins", "One step starts the day", "The sky is getting brighter").random(Random(seed)) }
-    var written by rememberSaveable { mutableStateOf("") }
+private fun TypingChallenge(difficulty: MissionDifficulty, seed: Long, pass: () -> Unit) {
+    val phrase = remember(difficulty, seed) { typingPhrases.getValue(difficulty).random(Random(seed)) }
+    var written by rememberSaveable(phrase) { mutableStateOf("") }
     val textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface)
     val clipboard = LocalClipboard.current
     Text(phrase, style = MaterialTheme.typography.titleLarge)
@@ -400,7 +439,7 @@ private fun TypingChallenge(seed: Long, pass: () -> Unit) {
 @Composable
 private fun TileGrid(
     labels: List<String>, highlight: Int = -1, enabled: Boolean = true, columns: Int = 3,
-    showLabels: Boolean = true, onTap: (Int) -> Unit,
+    showLabels: Boolean = true, symbolSize: TextUnit = TextUnit.Unspecified, onTap: (Int) -> Unit,
 ) {
     val rowGap = 4.dp
     val minimum = 48.dp * columns + rowGap * (columns - 1)
@@ -413,10 +452,13 @@ private fun TileGrid(
                         modifier = Modifier.weight(1f).fillMaxHeight().then(
                             if (showLabels) Modifier else Modifier.semantics { contentDescription = labels[index] },
                         ),
+                        contentPadding = if (symbolSize == TextUnit.Unspecified) ButtonDefaults.ContentPadding else PaddingValues(0.dp),
                         colors = if (index == highlight) ButtonDefaults.filledTonalButtonColors(
                             disabledContainerColor = MaterialTheme.colorScheme.primary,
                             disabledContentColor = MaterialTheme.colorScheme.onPrimary,
-                        ) else ButtonDefaults.filledTonalButtonColors()) { if (showLabels) Text(labels[index]) }
+                        ) else ButtonDefaults.filledTonalButtonColors()) {
+                        if (showLabels) Text(labels[index], fontSize = symbolSize, lineHeight = symbolSize)
+                    }
                 }
             }
         }
