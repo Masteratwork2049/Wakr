@@ -124,7 +124,7 @@ class ClockStore internal constructor(private val prefs: DataStore<Preferences>)
     suspend fun updateCities(transform: (List<WorldCity>) -> List<WorldCity>) {
         prefs.edit { p ->
             val current = p[KEY_CITIES]?.let(::parseCities) ?: SEED_CITIES
-            p[KEY_CITIES] = encodeCities(transform(current).distinctBy { it.zone.id })
+            p[KEY_CITIES] = encodeCities(transform(current).distinctBy { it.id })
         }
     }
 
@@ -492,7 +492,8 @@ private fun parseWidgetConfig(s: String): WidgetConfig = runCatching {
 
 private fun encodeCities(list: List<WorldCity>) = JSONArray().apply {
     list.forEach {
-        put(JSONObject().put("zone", it.zone.id).put("city", it.city).put("region", it.region))
+        put(JSONObject().put("zone", it.zone.id).put("city", it.city).put("region", it.region)
+            .put("id", it.id).put("latitude", it.latitude).put("longitude", it.longitude))
     }
 }.toString()
 
@@ -501,8 +502,13 @@ private fun parseCities(s: String): List<WorldCity> = runCatching {
     (0 until arr.length()).mapNotNull { i ->
         val o = arr.getJSONObject(i)
         // A zone id can vanish between tzdb releases; drop the row rather than the whole list.
-        runCatching { WorldCity(ZoneId.of(o.getString("zone")), o.getString("city"), o.getString("region")) }
-            .getOrNull()
+        runCatching {
+            val zone = cityZone(o.getString("zone"))
+            WorldCity(zone, o.getString("city"), o.getString("region"),
+                id = o.optString("id", zone.id),
+                latitude = o.optDouble("latitude").takeIf(Double::isFinite),
+                longitude = o.optDouble("longitude").takeIf(Double::isFinite))
+        }.getOrNull()
     }
 }.getOrDefault(emptyList())
 

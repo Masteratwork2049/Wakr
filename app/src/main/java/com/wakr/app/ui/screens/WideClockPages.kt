@@ -39,7 +39,7 @@ internal fun useWideClockPages(width: Float, height: Float, fontScale: Float): B
 @Composable
 internal fun WideClockPages(
     worldSelected: Boolean,
-    cities: List<WorldCity>, selectedZoneId: String?,
+    cities: List<WorldCity>, selectedCityId: String?,
     onSelectCity: (WorldCity) -> Unit, onShowLocalTime: () -> Unit,
     alarmContent: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
@@ -47,7 +47,7 @@ internal fun WideClockPages(
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val now by rememberWallTicker()
     val local = prettify(ZoneId.systemDefault().id).copy(region = "Local Time")
-    val selected = cities.firstOrNull { it.zone.id == selectedZoneId } ?: local
+    val selected = cities.firstOrNull { it.id == selectedCityId } ?: local
     val clockCity = if (worldSelected) selected else local
     val motion = remember { Animatable(if (worldSelected) 1f else 0f) }
     LaunchedEffect(worldSelected) {
@@ -86,7 +86,7 @@ internal fun WideClockPages(
             }
             .inactiveClockPane(!worldSelected), contentAlignment = Alignment.Center) {
             SavedLocationGrid(cities = cities, localCity = local,
-                onShowLocalTime = onShowLocalTime, selectedZoneId = selectedZoneId,
+                onShowLocalTime = onShowLocalTime, selectedCityId = selectedCityId,
                 nowUtcMillis = now, onSelectCity = onSelectCity,
                 state = LocalWorldClockPresentation.current.grid,
                 entranceVisible = worldSelected, centreShortContent = true, modifier = Modifier.fillMaxSize())
@@ -110,7 +110,7 @@ internal fun WideClockPages(
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (world) {
                         MechanicalText(selected.city, WorldClockType.city(24.sp), scheme.onSurface,
-                            modifier = Modifier.fillMaxWidth(), selectionKey = selected.zone.id, progressiveBlur = true)
+                            modifier = Modifier.fillMaxWidth(), selectionKey = selected.id, progressiveBlur = true)
                         val description = selected.timeAt(now).format(DateTimeFormatter.ofPattern("zzzz · EEE, d MMM", locale))
                         WorldClockSubtitle(description)
                     } else {

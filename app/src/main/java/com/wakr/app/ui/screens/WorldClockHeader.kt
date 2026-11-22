@@ -95,7 +95,7 @@ internal fun WorldClockHeader(city: WorldCity, now: Long, dialSize: Dp, collapse
                 AnalogueWorldClock(city.zone, now, Modifier.size(dialSize * (1f - collapse)), active = visibility.analogue > 0f)
                 MechanicalText(city.city, style = WorldClockType.city(24.sp), color = foreground,
                     modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
-                    selectionKey = city.zone.id, active = visibility.analogue > 0f, progressiveBlur = true)
+                    selectionKey = city.id, active = visibility.analogue > 0f, progressiveBlur = true)
 
         }
         Column(Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(top = 8.dp + dialSize * .5f * (1f - collapse))

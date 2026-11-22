@@ -243,8 +243,8 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     fun addCity(city: WorldCity) = viewModelScope.launch {
         try {
             store.updateCities { current ->
-                if (current.none { it.zone == city.zone }) {
-                    newlyAddedCity = city.zone.id
+                if (current.none { it.id == city.id }) {
+                    newlyAddedCity = city.id
                     current + city
                 } else current
             }
@@ -254,10 +254,8 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun removeCity(zone: ZoneId) = removeCities(setOf(zone))
-
-    fun removeCities(zones: Set<ZoneId>) = viewModelScope.launch {
-        store.updateCities { current -> current.filterNot { it.zone in zones } }
+    fun removeCities(ids: Set<String>) = viewModelScope.launch {
+        store.updateCities { current -> current.filterNot { it.id in ids } }
     }
 
     /* ── Timer ──────────────────────────────────────────────────────────────────────────────── */

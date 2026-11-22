@@ -130,6 +130,9 @@ data class WorldCity(
     val zone: ZoneId,
     val city: String,
     val region: String,
+    val id: String = zone.id,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
 ) {
     fun timeAt(nowUtcMillis: Long): ZonedDateTime =
         java.time.Instant.ofEpochMilli(nowUtcMillis).atZone(zone)

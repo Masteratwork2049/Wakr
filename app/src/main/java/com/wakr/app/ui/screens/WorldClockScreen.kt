@@ -112,7 +112,7 @@ fun WorldClockScreen(
                     .aspectRatio(1f),
             )
         }
-        items(cities, key = { it.zone.id }) { city ->
+        items(cities, key = { it.id }) { city ->
             CityRow(
                 city = city,
                 home = home,

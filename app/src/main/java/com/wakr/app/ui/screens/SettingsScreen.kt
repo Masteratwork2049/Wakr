@@ -368,6 +368,12 @@ fun SettingsScreen(
                     subtitle = "Wakr ${com.wakr.app.BuildConfig.VERSION_NAME}",
                     onClick = {},
                 )
+                Text(
+                    "World Clock city data from GeoNames (geonames.org) · CC BY 4.0",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
 
             Spacer(Modifier.height(4.dp))

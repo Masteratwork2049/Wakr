@@ -45,6 +45,24 @@ class WakeStoreTest {
         setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), false, false, "content://tone/81",
         1234, 321, LocalDate.parse("2026-09-17"), wake = WakeOptions(maxSnoozes = null))
 
+    @Test fun citiesSharingOneTimeZoneKeepSeparateIdentitiesAcrossRestarts() = runBlocking {
+        val zone = java.time.ZoneId.of("America/Chicago")
+        val first = WorldCity(zone, "Springfield", "Illinois, United States", "geonames:4250542", 39.8, -89.64)
+        val second = WorldCity(zone, "Springfield", "Missouri, United States", "geonames:4409896", 37.22, -93.3)
+        open(emptyList()) { prefs ->
+            val store = ClockStore(prefs)
+            store.putCities(emptyList())
+            store.updateCities { it + listOf(first, second, second) }
+            assertEquals(listOf(first, second), store.cities.first())
+        }
+        open(emptyList()) { prefs ->
+            val store = ClockStore(prefs)
+            assertEquals(listOf(first, second), store.cities.first())
+            store.updateCities { cities -> cities.filterNot { it.id == first.id } }
+            assertEquals(listOf(second), store.cities.first())
+        }
+    }
+
     @Test fun savedAutomaticTimerNamesFollowTheirPositionAndCustomNamesRemainIntact() = runBlocking {
         val duration = java.time.Duration.ofSeconds(90)
         val first = ClockTimer(101, "Timer 1", duration, TimerState.RUNNING, 100_000, usesDefaultLabel = true)

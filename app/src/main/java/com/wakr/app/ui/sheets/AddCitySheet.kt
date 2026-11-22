@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -33,27 +34,15 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.wakr.app.core.WorldCity
+import com.wakr.app.data.WorldCityCatalog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-
-// A preference order over real tzdb records, not a second database or synthetic search results.
-private val suggestedZones = listOf("Europe/London", "Asia/Tokyo", "America/New_York", "Europe/Paris",
-    "Asia/Singapore", "Australia/Sydney", "America/Los_Angeles", "Asia/Dubai")
-
-internal fun locationChoices(all: List<WorldCity>, taken: Set<String>, query: String): List<WorldCity> {
-    val available = all.filterNot { it.zone.id in taken }
-    val q = query.trim().lowercase(Locale.ROOT)
-    return if (q.isEmpty()) available.sortedBy {
-        suggestedZones.indexOf(it.zone.id).let { rank -> if (rank < 0) Int.MAX_VALUE else rank }
-    }.take(6) else available.filter {
-        it.city.lowercase(Locale.ROOT).contains(q) || it.region.lowercase(Locale.ROOT).contains(q) ||
-            it.zone.id.lowercase(Locale.ROOT).contains(q)
-    }.take(200)
-}
 
 /** One adaptive modal presentation for phones and wide windows; city data stays entirely offline. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,12 +53,11 @@ fun AddCitySheet(existing: List<WorldCity>, nowUtcMillis: Long,
     var focused by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
-    val taken = remember(existing) { existing.map { it.zone.id }.toSet() + ZoneId.systemDefault().id }
-    val all = remember {
-        ZoneId.getAvailableZoneIds().filter { "/" in it && !it.startsWith("Etc/") && !it.startsWith("SystemV/") }
-            .map(::prettify).sortedBy { it.city.lowercase(Locale.ROOT) }
+    val assets = LocalContext.current.assets
+    val catalog by produceState<WorldCityCatalog?>(null, assets) {
+        value = withContext(Dispatchers.IO) { WorldCityCatalog.load(assets) }
     }
-    val results = remember(query, taken, all) { locationChoices(all, taken, query) }
+    val results = remember(query, existing, catalog) { catalog?.choices(existing, query).orEmpty() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
@@ -93,7 +81,7 @@ fun AddCitySheet(existing: List<WorldCity>, nowUtcMillis: Long,
     }
     fun dismiss(add: WorldCity? = null) {
         if (closing) return
-        if (add != null && add.zone.id in taken) return
+        if (add != null && existing.any { it.id == add.id }) return
         closing = true
         focus.clearFocus(); keyboard?.hide()
         scope.launch {
@@ -148,17 +136,19 @@ fun AddCitySheet(existing: List<WorldCity>, nowUtcMillis: Long,
                 item { Text(if (query.isBlank()) "Suggested Cities" else "Search Results",
                     style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) }
-                if (results.isEmpty()) item {
+                if (catalog == null) item {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp))
+                } else if (results.isEmpty()) item {
                     Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(if (query.isBlank()) "You're up to date" else "No matching cities",
                             style = MaterialTheme.typography.titleMedium)
                         Text(if (query.isBlank()) "Your saved locations are excluded from suggestions."
-                            else "Try a different city, region or timezone name.",
+                            else "Try a different city or country.",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                items(results, key = { it.zone.id }) { city ->
+                items(results, key = { it.id }) { city ->
                     ListItem(headlineContent = { Text(city.city) }, supportingContent = { Text(city.region) },
                         leadingContent = { Icon(Icons.Outlined.LocationOn, contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary) },

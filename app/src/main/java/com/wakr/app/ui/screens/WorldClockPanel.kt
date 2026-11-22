@@ -127,14 +127,14 @@ fun WorldClockPanel(
     flatPortrait: Boolean = false,
     hourFormat: com.wakr.app.data.HourFormat = com.wakr.app.data.HourFormat.SYSTEM,
     cities: List<WorldCity>,
-    selectedZoneId: String?,
+    selectedCityId: String?,
     onSelectCity: (WorldCity) -> Unit,
     onShowLocalTime: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val now by rememberWallTicker()
     val localCity = prettify(ZoneId.systemDefault().id).copy(region = "Local Time")
-    val selected = cities.firstOrNull { it.zone.id == selectedZoneId } ?: localCity
+    val selected = cities.firstOrNull { it.id == selectedCityId } ?: localCity
     val presentation = LocalWorldClockPresentation.current
     val state = presentation.grid
     var collapse by presentation.collapse
@@ -199,7 +199,7 @@ fun WorldClockPanel(
                 WorldClockHeader(selected, now, dialSize, collapse, detailsHeight)
                 SavedLocationGrid(
                     cities = cities, localCity = localCity, onShowLocalTime = onShowLocalTime,
-                    selectedZoneId = selectedZoneId, nowUtcMillis = now, onSelectCity = onSelectCity,
+                    selectedCityId = selectedCityId, nowUtcMillis = now, onSelectCity = onSelectCity,
                     state = state,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -213,7 +213,7 @@ internal fun SavedLocationGrid(
     cities: List<WorldCity>,
     localCity: WorldCity,
     onShowLocalTime: () -> Unit,
-    selectedZoneId: String?,
+    selectedCityId: String?,
     nowUtcMillis: Long,
     onSelectCity: (WorldCity) -> Unit,
     state: androidx.compose.foundation.lazy.grid.LazyGridState,
@@ -243,15 +243,15 @@ internal fun SavedLocationGrid(
         if (entranceVisible == false) { selectedIds = emptySet(); confirmDelete = false }
     }
     LaunchedEffect(cities) {
-        val sourceIds = cities.map { it.zone.id }.toSet()
+        val sourceIds = cities.map { it.id }.toSet()
         selectedIds = selectedIds.intersect(sourceIds)
-        val removed = displayedCities.map { it.zone.id }.toSet() - sourceIds
+        val removed = displayedCities.map { it.id }.toSet() - sourceIds
         if (removed.isEmpty()) displayedCities = cities
         else {
             exitingIds = exitingIds + removed
-            val source = cities.associateBy { it.zone.id }
-            val oldIds = displayedCities.map { it.zone.id }.toSet()
-            displayedCities = displayedCities.map { source[it.zone.id] ?: it } + cities.filterNot { it.zone.id in oldIds }
+            val source = cities.associateBy { it.id }
+            val oldIds = displayedCities.map { it.id }.toSet()
+            displayedCities = displayedCities.map { source[it.id] ?: it } + cities.filterNot { it.id in oldIds }
             delay(360) // Same 260ms exit + removal margin as Alarm cards.
             displayedCities = cities
             exitingIds = exitingIds - removed
@@ -264,14 +264,14 @@ internal fun SavedLocationGrid(
         count = selectedIds.size, itemName = "location", onDismiss = { confirmDelete = false },
         onConfirmDelete = {
             val ids = selectedIds
-            val remaining = cities.filterNot { it.zone.id in ids }
-            if (selectedZoneId in ids) {
+            val remaining = cities.filterNot { it.id in ids }
+            if (selectedCityId in ids) {
                 remaining.firstOrNull()?.let(onSelectCity) ?: onShowLocalTime()
             }
             // Deleting is a new user action: release any addition coordinator so its
             // placement suppression cannot survive into the removal/reflow animation.
             vm.finishCityEntrance()
-            vm.removeCities(cities.filter { it.zone.id in ids }.map { it.zone }.toSet())
+            vm.removeCities(ids)
             selectedIds = emptySet(); confirmDelete = false
         })
     // The wide pane owns a full-height viewport. Short lists are centred through content
@@ -294,10 +294,10 @@ internal fun SavedLocationGrid(
     val density = LocalDensity.current
     LaunchedEffect(vm.newlyAddedCity, cities, columns) {
         val id = vm.newlyAddedCity ?: return@LaunchedEffect
-        if (cities.none { it.zone.id == id }) return@LaunchedEffect
+        if (cities.none { it.id == id }) return@LaunchedEffect
         completedScrollCity = null
         snapshotFlow {
-            val index = displayedCities.indexOfFirst { it.zone.id == id } + 1
+            val index = displayedCities.indexOfFirst { it.id == id } + 1
             Triple(index, state.layoutInfo.totalItemsCount, state.layoutInfo.viewportSize.height)
         }.first { (index, count, height) -> index > 0 && count == displayedCities.size + 1 && height > 0 }
         // Reveal alongside layout movement, not as a second pop after scrolling stops.
@@ -306,7 +306,7 @@ internal fun SavedLocationGrid(
             snapshotFlow { !gutterMotion.isRunning && gutterMotion.value == targetGutter }
                 .first { it }
             androidx.compose.runtime.withFrameNanos { } // consume the final padding measurement
-            val index = displayedCities.indexOfFirst { it.zone.id == id } + 1
+            val index = displayedCities.indexOfFirst { it.id == id } + 1
             state.scroll {
                 val layout = state.layoutInfo
                 val anchor = layout.visibleItemsInfo.firstOrNull() ?: return@scroll
@@ -337,10 +337,10 @@ internal fun SavedLocationGrid(
     // Freeze the item snapshot used by this lazy content and its animation maps.
     // Effects can update displayedCities before LazyGrid rebuilds its item provider.
     val frameCities = displayedCities
-    val pageEntries = (listOf("local") + frameCities.map { it.zone.id }).mapIndexed { index, id ->
+    val pageEntries = (listOf("local") + frameCities.map { it.id }).mapIndexed { index, id ->
         id to key(id) { rememberCityPageEntry(entranceVisible, index) }
     }.toMap()
-    val arrivalAlphas = (listOf("local") + frameCities.map { it.zone.id }).associateWith { id ->
+    val arrivalAlphas = (listOf("local") + frameCities.map { it.id }).associateWith { id ->
         key(id) {
             // Opacity must not use the overshooting scale spring. Share this monotonic
             // fade with the viewport halo, and retain it after the pending flag clears.
@@ -348,10 +348,10 @@ internal fun SavedLocationGrid(
                 tween(220), label = "cityArrivalOpacity")
         }
     }
-    val glowEntries = (listOf("local") + frameCities.map { it.zone.id }).mapIndexed { index, id ->
+    val glowEntries = (listOf("local") + frameCities.map { it.id }).mapIndexed { index, id ->
         key(id) {
-            val isSelected = if (id == "local") !selectionMode && selectedZoneId == null
-                else if (selectionMode) id in selectedIds else id == selectedZoneId
+            val isSelected = if (id == "local") !selectionMode && selectedCityId == null
+                else if (selectionMode) id in selectedIds else id == selectedCityId
             val strength = animateFloatAsState(if (isSelected && id !in exitingIds) 1f else 0f,
                 tween(280), label = "viewportCityGlow")
             CityViewportGlow(index, strength, arrivalAlphas.getValue(id), pageEntries[id])
@@ -400,14 +400,14 @@ internal fun SavedLocationGrid(
             item(key = "local") {
                 val entry = pageEntries["local"]
                 Box(Modifier.fillMaxWidth().cityPageEntrance(entry, cardWidth), Alignment.Center) {
-                    CityGridCard(city = localCity, selected = !selectionMode && selectedZoneId == null,
+                    CityGridCard(city = localCity, selected = !selectionMode && selectedCityId == null,
                         nowUtcMillis = nowUtcMillis, onClick = { selectedIds = emptySet(); onShowLocalTime() },
                         cardHeight = cardHeight, selectionMode = selectionMode, modifier = Modifier.width(cardWidth))
                 }
             }
-            items(frameCities, key = { it.zone.id }) { city ->
-                val entry = pageEntries[city.zone.id]
-                val exiting = city.zone.id in exitingIds
+            items(frameCities, key = { it.id }) { city ->
+                val entry = pageEntries[city.id]
+                val exiting = city.id in exitingIds
                 val exitAlpha by animateFloatAsState(if (exiting) 0f else 1f, tween(260), label = "cityDeleteFade")
                 val exitScale by animateFloatAsState(if (exiting) .90f else 1f,
                     spring(dampingRatio = .78f, stiffness = 500f), label = "cityDeleteScale")
@@ -422,18 +422,18 @@ internal fun SavedLocationGrid(
                     LocationCard(
                         cardHeight = cardHeight, city = city,
                         showSelectionBadge = selectionMode,
-                        selected = if (selectionMode) city.zone.id in selectedIds else city.zone.id == selectedZoneId,
+                        selected = if (selectionMode) city.id in selectedIds else city.id == selectedCityId,
                         nowUtcMillis = nowUtcMillis,
-                        onSelect = { if (selectionMode) toggleSelection(city.zone.id) else onSelectCity(city) },
+                        onSelect = { if (selectionMode) toggleSelection(city.id) else onSelectCity(city) },
                         onLongPress = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            toggleSelection(city.zone.id)
+                            toggleSelection(city.id)
                         },
-                        onRequestDelete = { selectedIds = selectedIds + city.zone.id; confirmDelete = true },
+                        onRequestDelete = { selectedIds = selectedIds + city.id; confirmDelete = true },
                         enabled = !exiting,
-                        entering = revealedCity == city.zone.id && vm.newlyAddedCity == city.zone.id,
-                        pendingEntrance = vm.newlyAddedCity == city.zone.id,
-                        arrivalAlpha = arrivalAlphas.getValue(city.zone.id),
+                        entering = revealedCity == city.id && vm.newlyAddedCity == city.id,
+                        pendingEntrance = vm.newlyAddedCity == city.id,
+                        arrivalAlpha = arrivalAlphas.getValue(city.id),
                         modifier = Modifier.width(cardWidth).graphicsLayer {
                             outsets = lightBounds
                             alpha = exitAlpha; scaleX = exitScale; scaleY = exitScale
@@ -442,9 +442,9 @@ internal fun SavedLocationGrid(
                             scope.launch {
                                 // Entrance can finish while centred padding is still moving.
                                 // Do not clear the pending key and cancel the scroll coordinator.
-                                snapshotFlow { vm.newlyAddedCity != city.zone.id ||
-                                    (completedScrollCity == city.zone.id && !state.isScrollInProgress) }.first { it }
-                                if (vm.newlyAddedCity == city.zone.id) vm.finishCityEntrance()
+                                snapshotFlow { vm.newlyAddedCity != city.id ||
+                                    (completedScrollCity == city.id && !state.isScrollInProgress) }.first { it }
+                                if (vm.newlyAddedCity == city.id) vm.finishCityEntrance()
                             }
                         },
                     )
@@ -499,7 +499,7 @@ private fun LocationCard(
     arrivalAlpha: androidx.compose.runtime.State<Float>,
     onEntranceFinished: () -> Unit, modifier: Modifier = Modifier,
 ) {
-    val entrance = remember(city.zone.id) { Animatable(if (pendingEntrance) 0f else 1f) }
+    val entrance = remember(city.id) { Animatable(if (pendingEntrance) 0f else 1f) }
     LaunchedEffect(entering, pendingEntrance) {
         if (!pendingEntrance) { entrance.snapTo(1f); return@LaunchedEffect }
         if (!entering) return@LaunchedEffect
@@ -545,7 +545,7 @@ private fun CityGridCard(
     val scheme = MaterialTheme.colorScheme
     val primary = scheme.primary
     val dark = scheme.surface.luminance() < .5f
-    val coordinates = remember(city.zone.id, city.city) { cityCoordinates(city) }
+    val coordinates = remember(city) { cityCoordinates(city) }
     val night = remember(coordinates, city.zone, nowUtcMillis / 60_000) {
         coordinates?.let { !solarDaylight(nowUtcMillis, it.latitude, it.longitude) } ?: city.isNight(nowUtcMillis)
     }

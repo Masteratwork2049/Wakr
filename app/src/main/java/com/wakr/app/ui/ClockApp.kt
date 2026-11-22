@@ -232,7 +232,15 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         var relativePicker by remember { mutableStateOf(false) }
         var showNewAlarmPicker by remember { mutableStateOf(false) }
         var showAddCitySheet by rememberSaveable { mutableStateOf(false) }
-        var selectedWorldCityZoneId by rememberSaveable { mutableStateOf<String?>(null) }
+        var selectedWorldCityId by rememberSaveable { mutableStateOf<String?>(null) }
+        var pendingWorldCityId by rememberSaveable { mutableStateOf<String?>(null) }
+        LaunchedEffect(cities, pendingWorldCityId) {
+            val id = pendingWorldCityId ?: return@LaunchedEffect
+            if (cities.any { it.id == id }) {
+                selectedWorldCityId = id
+                pendingWorldCityId = null
+            }
+        }
         var alarmSelectionCount by remember { mutableIntStateOf(0) }
         var clearSelectionSignal by remember { mutableIntStateOf(0) }
         var selectAllSignal by rememberSaveable { mutableIntStateOf(0) }
@@ -474,18 +482,18 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                         if (wideClockPages) {
                             com.wakr.app.ui.screens.WideClockPages(
                                 worldSelected = current == Tab.WORLD,
-                                cities = cities, selectedZoneId = selectedWorldCityZoneId,
-                                onSelectCity = { selectedWorldCityZoneId = it.zone.id },
-                                onShowLocalTime = { selectedWorldCityZoneId = null },
+                                cities = cities, selectedCityId = selectedWorldCityId,
+                                onSelectCity = { selectedWorldCityId = it.id },
+                                onShowLocalTime = { selectedWorldCityId = null },
                                 alarmContent = { alarmCards(it, true, PaddingValues(vertical = 8.dp)) },
                                 modifier = Modifier.padding(body))
                         } else {
                             val phoneTab = current
                             androidx.compose.runtime.key(phoneTab) {
                                 if (phoneTab == Tab.WORLD) com.wakr.app.ui.screens.WorldClockPanel(
-                                    flatPortrait = true, cities = cities, selectedZoneId = selectedWorldCityZoneId,
-                                    onSelectCity = { selectedWorldCityZoneId = it.zone.id },
-                                    onShowLocalTime = { selectedWorldCityZoneId = null }, modifier = Modifier.padding(body))
+                                    flatPortrait = true, cities = cities, selectedCityId = selectedWorldCityId,
+                                    onSelectCity = { selectedWorldCityId = it.id },
+                                    onShowLocalTime = { selectedWorldCityId = null }, modifier = Modifier.padding(body))
                                 else alarmCards(Modifier, false, PaddingValues(start = 16.dp, end = 16.dp,
                                     top = padding.calculateTopPadding(), bottom = underDock))
                             }
@@ -642,10 +650,10 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
         if (showAddCitySheet) {
             AddCitySheet(
                 existing = cities,
-                nowUtcMillis = System.currentTimeMillis(),
+                nowUtcMillis = rememberWallTicker(60_000).value,
                 onAdd = { city: WorldCity ->
+                    pendingWorldCityId = city.id
                     vm.addCity(city)
-                    selectedWorldCityZoneId = city.zone.id
                 },
                 onDismiss = { showAddCitySheet = false },
             )

@@ -7,8 +7,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.math.*
 
-/** Uses existing tzdb representative coordinates; never requests device location or a network lookup. */
+/** Uses catalog coordinates, with a tzdb representative point for older saved cities. */
 internal fun cityCoordinates(city: WorldCity): GeographicPoint? {
+    if (city.latitude != null && city.longitude != null) return GeographicPoint(city.latitude, city.longitude)
     if (city.zone.id == "America/Los_Angeles" && city.city == "San Francisco")
         return GeographicPoint(37.7749, -122.4194)
     val canonical = android.icu.util.TimeZone.getCanonicalID(city.zone.id) ?: city.zone.id
