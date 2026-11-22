@@ -313,6 +313,8 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addTenSeconds(id: Long) = viewModelScope.launch { TimerRuntime.add(ctx, id, 10) }
 
+    fun renameTimer(id: Long, name: String) = viewModelScope.launch { TimerRuntime.rename(ctx, id, name) }
+
     fun cancelTimer(id: Long) = viewModelScope.launch { TimerRuntime.cancel(ctx, id) }
 
     /* ── Stopwatch ──────────────────────────────────────────────────────────────────────────── */

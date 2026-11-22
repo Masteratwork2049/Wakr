@@ -8,11 +8,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -25,6 +28,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.wakr.app.core.ClockTimer
 import com.wakr.app.core.MAX_TIMERS
 import com.wakr.app.core.TimerState
@@ -41,6 +45,7 @@ internal fun CountdownTimers(
     onPauseResume: (Long) -> Unit,
     onAddTen: (Long) -> Unit,
     onCancel: (Long) -> Unit,
+    onRename: (Long, String) -> Unit,
     modifier: Modifier,
     addTimerContent: @Composable (() -> Unit) -> Unit,
 ) {
@@ -56,9 +61,17 @@ internal fun CountdownTimers(
     val hasRoom = timers.size < MAX_TIMERS
     var adding by rememberSaveable { mutableStateOf(false) }
     if (adding && hasRoom) addTimerContent { adding = false }
+    var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    timers.firstOrNull { it.id == editingId }?.let { timer ->
+        EditTimerNameDialog(timer, { editingId = null }) { name ->
+            onRename(timer.id, name)
+            editingId = null
+        }
+    }
 
     BoxWithConstraints(modifier) {
         val controlsMaxHeight = maxHeight * .72f
+        val wideControls = maxWidth >= 400.dp
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             CountdownDialLayout(timers, now, selected.id, { selectedId = it }, Modifier.weight(1f))
             Column(
@@ -87,13 +100,56 @@ internal fun CountdownTimers(
                             contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Cancel", maxLines = 1) }
                     }
                 }
-                Presets(presets, { if (hasRoom) onPreset(it) }, onEditPreset)
-                OutlinedButton(onClick = { adding = true }, enabled = hasRoom, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (hasRoom) "Add timer" else "Add timer · 4 of 4")
+                val presetRow: @Composable () -> Unit = {
+                    Presets(presets, { if (hasRoom) onPreset(it) }, onEditPreset, compact = true)
+                }
+                val nameAndAdd: @Composable () -> Unit = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = { editingId = selected.id }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Edit name")
+                        }
+                        OutlinedButton(onClick = { adding = true }, enabled = hasRoom, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (hasRoom) "Add timer" else "Add timer · 4 of 4")
+                        }
+                    }
+                }
+                if (wideControls) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.weight(1f).align(Alignment.CenterVertically)) { presetRow() }
+                        Box(Modifier.width(170.dp)) { nameAndAdd() }
+                    }
+                } else {
+                    presetRow()
+                    nameAndAdd()
                 }
             }
         }
     }
+}
+
+@Composable
+private fun EditTimerNameDialog(timer: ClockTimer, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by rememberSaveable(timer.id) { mutableStateOf(if (timer.usesDefaultLabel) "" else timer.label) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.padding(horizontal = 24.dp).widthIn(max = 420.dp).fillMaxWidth(),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = { Text("Edit name") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(40) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Timer name") },
+                )
+                Text("Leave blank to use the timer number.", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(name) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

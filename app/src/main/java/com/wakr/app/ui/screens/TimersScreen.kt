@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -92,13 +93,14 @@ internal fun TimersScreen(
     onPauseResume: (Long) -> Unit,
     onAddTen: (Long) -> Unit,
     onCancel: (Long) -> Unit,
+    onRename: (Long, String) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     val body = modifier.fillMaxSize().padding(contentPadding)
     if (timers.isNotEmpty()) {
         CountdownTimers(
-            timers, nowElapsedMillis, presets, onPreset, onEditPreset, onPauseResume, onAddTen, onCancel,
+            timers, nowElapsedMillis, presets, onPreset, onEditPreset, onPauseResume, onAddTen, onCancel, onRename,
             modifier = body.padding(horizontal = 16.dp),
             addTimerContent = { close ->
                 AddCountdownDialog(draft, onDigits, onBackspace, onResetDraft, close, onStart)
@@ -673,6 +675,7 @@ internal fun Presets(
     presets: List<Int>,
     onPreset: (Int) -> Unit,
     onEditPreset: (Int, Int) -> Unit,
+    compact: Boolean = false,
 ) {
     var editingIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
     editingIndex?.let { index ->
@@ -698,10 +701,23 @@ internal fun Presets(
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val density = LocalDensity.current
             val measurer = rememberTextMeasurer()
-            val style = MaterialTheme.typography.labelLargeEmphasized
+            val style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLargeEmphasized
             val required = with(density) { (presets.maxOfOrNull {
                 measurer.measure(formatPresetLabel(it), style).size.width
-            } ?: 0).toDp() } + 24.dp
+            } ?: 0).toDp() } + if (compact) 12.dp else 24.dp
+            if (compact && presets.isNotEmpty()) {
+                val spacing = 4.dp
+                val width = maxOf(48.dp, required, (maxWidth - spacing * (presets.size - 1)) / presets.size)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    presets.forEachIndexed { index, seconds ->
+                        Box(Modifier.width(width)) {
+                            PresetButton(seconds, onClick = { onPreset(seconds) },
+                                onLongClick = { editingIndex = index }, compact = true)
+                        }
+                    }
+                }
+                return@BoxWithConstraints
+            }
             val maxColumns = ((maxWidth + 6.dp) / (required + 6.dp)).toInt().coerceIn(1, presets.size.coerceAtLeast(1))
             val rows = (presets.size + maxColumns - 1) / maxColumns
             val columns = if (rows == 0) 1 else (presets.size + rows - 1) / rows
@@ -723,12 +739,12 @@ internal fun Presets(
 }
 
 @Composable
-private fun PresetButton(seconds: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun PresetButton(seconds: Int, onClick: () -> Unit, onLongClick: () -> Unit, compact: Boolean = false) {
     val presetShape = RoundedCornerShape(27.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(if (compact) 48.dp else 54.dp)
             .luminousElasticClickable(shape = presetShape, onClick = onClick, onLongClick = onLongClick)
             .clip(presetShape)
             .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .92f))
@@ -737,7 +753,7 @@ private fun PresetButton(seconds: Int, onClick: () -> Unit, onLongClick: () -> U
     ) {
         Text(
             formatPresetLabel(seconds),
-            style = MaterialTheme.typography.labelLargeEmphasized,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLargeEmphasized,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
     }

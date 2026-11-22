@@ -53,6 +53,19 @@ internal object TimerRuntime {
         }
     }
 
+    suspend fun rename(context: Context, id: Long, name: String) = transaction {
+        val store = ClockStore(context)
+        val current = store.timersNow().find { it.id == id } ?: return@transaction
+        val label = name.trim().take(40)
+        val updated = current.copy(label = label, usesDefaultLabel = label.isEmpty())
+        if (updated == current || updated.usesDefaultLabel && current.usesDefaultLabel) return@transaction
+        val saved = store.updateTimers { timers ->
+            timers.map { if (it.id == id) updated else it }
+        }.first { it.id == id }
+        Notifications.showTimer(context, saved)
+        AlarmService.refreshTimerChime()
+    }
+
     suspend fun cancel(context: Context, id: Long) = transaction {
         val store = ClockStore(context)
         val before = store.timersNow().associateBy { it.id }

@@ -519,6 +519,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                             onPauseResume = { vm.pauseOrResumeTimer(it) },
                             onAddTen = { vm.addTenSeconds(it) },
                             onCancel = { vm.cancelTimer(it) },
+                            onRename = { id, name -> vm.renameTimer(id, name) },
                             contentPadding = edgeToEdge,
                         )
                     }
