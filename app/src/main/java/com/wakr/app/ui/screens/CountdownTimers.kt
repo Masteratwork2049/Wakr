@@ -1,5 +1,6 @@
 package com.wakr.app.ui.screens
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -69,7 +70,9 @@ internal fun CountdownTimers(
                     selected.state == TimerState.FINISHED ||
                         selected.state == TimerState.RUNNING && selected.remaining(now.value).isZero
                 } }
-                Text(selected.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Crossfade(selected.label, animationSpec = tween(220), label = "Selected timer name") { name ->
+                    Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (finished) {
                         Button(onClick = { onCancel(selected.id) }, modifier = Modifier.weight(1f)) { Text("Dismiss") }
@@ -154,14 +157,20 @@ private fun CountdownDialLayout(
                             maxLines = 1,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        Text(
+                        Crossfade(
                             if (seconds <= 0) "Time’s up" else timer.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = with(LocalDensity.current) { (diameter * .09f).toSp().value.coerceAtMost(12f).sp },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                            animationSpec = tween(220),
+                            label = "Timer name",
+                        ) { name ->
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = with(LocalDensity.current) { (diameter * .09f).toSp().value.coerceAtMost(12f).sp },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

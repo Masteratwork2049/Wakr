@@ -18,6 +18,7 @@ import com.wakr.app.core.ClockTimer
 import com.wakr.app.core.Lap
 import com.wakr.app.core.Stopwatch
 import com.wakr.app.core.TimerState
+import com.wakr.app.core.numberByPosition
 import com.wakr.app.core.WorldCity
 import com.wakr.app.ui.theme.Palette
 import java.time.DayOfWeek
@@ -129,14 +130,15 @@ class ClockStore internal constructor(private val prefs: DataStore<Preferences>)
 
     private fun Preferences.readTimers(): List<ClockTimer> {
         val raw = this[KEY_TIMERS]
-        return if (raw == null) listOfNotNull(this[KEY_TIMER]?.let(::parseTimer))
+        val timers = if (raw == null) listOfNotNull(this[KEY_TIMER]?.let(::parseTimer))
         else runCatching { JSONArray(raw).records(JSONObject::toClockTimer) }.getOrDefault(emptyList())
+        return timers.numberByPosition()
     }
 
     suspend fun updateTimers(transform: (List<ClockTimer>) -> List<ClockTimer>): List<ClockTimer> {
         var result = emptyList<ClockTimer>()
         prefs.edit { p ->
-            result = transform(p.readTimers())
+            result = transform(p.readTimers()).numberByPosition()
             p[KEY_TIMERS] = JSONArray().apply { result.forEach { put(it.toTimerJson()) } }.toString()
             p.remove(KEY_TIMER)
         }
@@ -516,8 +518,11 @@ internal fun ClockTimer.toTimerJson() = JSONObject()
     .put("wallDeadline", wallDeadlineMillis)
     .put("bootCount", bootCount)
     .put("chimePending", chimePending)
+    .put("usesDefaultLabel", usesDefaultLabel)
 
 private fun parseTimer(s: String): ClockTimer? = runCatching { JSONObject(s).toClockTimer() }.getOrNull()
+
+private val legacyDefaultTimerLabel = Regex("Timer(?: [1-4])?")
 
 internal fun JSONObject.toClockTimer() = ClockTimer(
     id = getLong("id"),
@@ -531,6 +536,7 @@ internal fun JSONObject.toClockTimer() = ClockTimer(
     wallDeadlineMillis = optLong("wallDeadline"),
     bootCount = optInt("bootCount", -1),
     chimePending = optBoolean("chimePending"),
+    usesDefaultLabel = optBoolean("usesDefaultLabel", legacyDefaultTimerLabel.matches(getString("label"))),
 )
 
 private fun encodeStopwatch(s: Stopwatch) = JSONObject()

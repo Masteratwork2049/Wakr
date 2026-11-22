@@ -135,7 +135,11 @@ class AlarmService : Service() {
     private suspend fun playNextTimerOrStop(startId: Int? = null) {
         val pending = if (RuntimeAlarms.unlocked(this)) ClockStore(this).timersNow().filter { it.chimePending }
         else emptyList()
-        if (active && pending.any { it.id == timerChimeId }) return
+        val ringingTimer = pending.firstOrNull { it.id == timerChimeId }
+        if (active && ringingTimer != null) {
+            foreground(Notifications.timerChimeSummary(this, ringingTimer))
+            return
+        }
         val next = pending.minByOrNull { it.deadlineElapsedMillis }
         if (next == null) {
             active = false
@@ -377,11 +381,11 @@ class AlarmService : Service() {
             }
         }
 
-        internal suspend fun refreshTimerChime(id: Long) = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+        internal suspend fun refreshTimerChime() = kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
             val service = current ?: return@withContext
             service.scope.launch {
                 service.starts.withLock {
-                    if (service.occurrence == null && service.timerChimeId == id) service.playNextTimerOrStop()
+                    if (service.occurrence == null && service.timerChimeId != null) service.playNextTimerOrStop()
                 }
             }
             Unit

@@ -191,6 +191,7 @@ data class ClockTimer(
     val wallDeadlineMillis: Long = 0L,
     val bootCount: Int = -1,
     val chimePending: Boolean = false,
+    val usesDefaultLabel: Boolean = false,
 ) {
     fun remaining(nowElapsedMillis: Long): Duration = when (state) {
         TimerState.RUNNING ->
@@ -211,6 +212,11 @@ data class ClockTimer(
         return (remaining(nowElapsedMillis).toMillis().toFloat() / t).coerceIn(0f, 1f)
     }
 }
+
+internal fun List<ClockTimer>.numberByPosition(): List<ClockTimer> =
+    mapIndexed { index, timer ->
+        if (timer.usesDefaultLabel) timer.copy(label = "Timer ${index + 1}") else timer
+    }
 
 /** One completed lap: its own split, and the total elapsed at the moment it was taken. */
 data class Lap(val index: Int, val split: Duration, val total: Duration)

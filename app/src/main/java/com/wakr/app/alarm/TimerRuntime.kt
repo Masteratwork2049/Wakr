@@ -25,13 +25,12 @@ internal object TimerRuntime {
         val store = ClockStore(context)
         val timers = store.timersNow()
         if (timers.size >= MAX_TIMERS) return@transaction false
-        val label = name.trim().ifBlank {
-            (1..MAX_TIMERS).map { "Timer $it" }.first { candidate -> timers.none { it.label == candidate } }
-        }
-        val timer = ClockTimer(store.nextId(), label, duration, TimerState.RUNNING,
-            SystemClock.elapsedRealtime() + duration.toMillis()).withCurrentDeadline(context)
-        store.updateTimers { it + timer }
-        TimerScheduler.sync(context, timer.id, timer)
+        val nameOverride = name.trim()
+        val timer = ClockTimer(store.nextId(), nameOverride, duration, TimerState.RUNNING,
+            SystemClock.elapsedRealtime() + duration.toMillis(),
+            usesDefaultLabel = nameOverride.isEmpty()).withCurrentDeadline(context)
+        val saved = store.updateTimers { it + timer }.last()
+        TimerScheduler.sync(context, saved.id, saved)
         true
     }
 
@@ -56,10 +55,12 @@ internal object TimerRuntime {
 
     suspend fun cancel(context: Context, id: Long) = transaction {
         val store = ClockStore(context)
-        val timer = store.timersNow().find { it.id == id } ?: return@transaction
-        store.updateTimers { timers -> timers.filterNot { it.id == timer.id } }
-        TimerScheduler.sync(context, timer.id, null)
-        AlarmService.refreshTimerChime(timer.id)
+        val before = store.timersNow().associateBy { it.id }
+        if (id !in before) return@transaction
+        val remaining = store.updateTimers { timers -> timers.filterNot { it.id == id } }
+        TimerScheduler.sync(context, id, null)
+        remaining.filter { it.label != before[it.id]?.label }.forEach { Notifications.showTimer(context, it) }
+        AlarmService.refreshTimerChime()
     }
 
     suspend fun expire(context: Context, id: Long) = transaction {

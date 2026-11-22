@@ -45,6 +45,32 @@ class WakeStoreTest {
         setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), false, false, "content://tone/81",
         1234, 321, LocalDate.parse("2026-09-17"), wake = WakeOptions(maxSnoozes = null))
 
+    @Test fun savedAutomaticTimerNamesFollowTheirPositionAndCustomNamesRemainIntact() = runBlocking {
+        val duration = java.time.Duration.ofSeconds(90)
+        val first = ClockTimer(101, "Timer 1", duration, TimerState.RUNNING, 100_000, usesDefaultLabel = true)
+        val shifted = ClockTimer(104, "Timer 4", duration, TimerState.PAUSED, pausedRemaining = duration.minusSeconds(8),
+            usesDefaultLabel = true)
+        val custom = ClockTimer(105, "Timer 4", duration, TimerState.FINISHED)
+        val formerLast = ClockTimer(106, "Timer 2", duration, TimerState.RUNNING, 110_000, usesDefaultLabel = true)
+        open(emptyList()) { prefs ->
+            prefs.edit { values ->
+                values[stringPreferencesKey("timers")] = org.json.JSONArray().apply {
+                    put(first.toTimerJson().apply { remove("usesDefaultLabel") })
+                    put(shifted.toTimerJson().apply { remove("usesDefaultLabel") })
+                    put(custom.toTimerJson())
+                    put(formerLast.toTimerJson().apply { remove("usesDefaultLabel") })
+                }.toString()
+            }
+            val store = ClockStore(prefs)
+            assertEquals(listOf(first, shifted.copy(label = "Timer 2"), custom, formerLast.copy(label = "Timer 4")), store.timersNow())
+            val remaining = store.updateTimers { it.filterNot { timer -> timer.id == first.id } }
+            assertEquals(listOf(shifted.copy(label = "Timer 1"), custom, formerLast.copy(label = "Timer 3")), remaining)
+        }
+        open(emptyList()) { prefs ->
+            assertEquals(listOf(shifted.copy(label = "Timer 1"), custom, formerLast.copy(label = "Timer 3")), ClockStore(prefs).timersNow())
+        }
+    }
+
     @Test fun legacyTimerRetainsItsDeadlineWhenTheTimerListIsWrittenAndReopened() = runBlocking {
         val original = ClockTimer(157, "Tea", java.time.Duration.ofSeconds(90), TimerState.RUNNING, 110_000)
         val second = ClockTimer(158, "Oven", java.time.Duration.ofSeconds(30), TimerState.PAUSED)
