@@ -3,7 +3,6 @@ package com.wakr.app.ui.screens
 
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,6 +32,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -92,6 +93,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -241,7 +243,9 @@ fun AlarmsScreen(
     editingAlarm: Alarm? = null,
     modifier: Modifier = Modifier,
     widePane: Boolean = false,
+    watchAlarmVolume: Boolean = true,
 ) {
+    val volumeWarning = if (watchAlarmVolume) rememberAlarmVolumeWarning() else null
     // Track how many cards are revealed during first-launch post-onboarding stagger
     var visibleCardsCount by remember(staggerEntranceToken) {
         mutableIntStateOf(if (staggerEntranceToken > 0) 0 else Int.MAX_VALUE)
@@ -360,10 +364,24 @@ fun AlarmsScreen(
     val windowSizeInfo = LocalAppWindowSizeInfo.current
 
     FixedEdgeFadeContainer(
-            topInset = contentPadding.calculateTopPadding(),
-            bottomInset = contentPadding.calculateBottomPadding(),
-            modifier = modifier,
-        ) {
+        topInset = contentPadding.calculateTopPadding(),
+        bottomInset = contentPadding.calculateBottomPadding(),
+        modifier = modifier,
+    ) {
+        val direction = LocalLayoutDirection.current
+        val start = contentPadding.calculateStartPadding(direction)
+        val end = contentPadding.calculateEndPadding(direction)
+        val showWarning = volumeWarning?.isLow == true
+        val panelPadding = if (showWarning) {
+            PaddingValues(start = start, end = end, bottom = contentPadding.calculateBottomPadding())
+        } else contentPadding
+        Column(Modifier.fillMaxSize()) {
+            if (showWarning && volumeWarning != null) {
+                AlarmVolumeWarning(
+                    volumeWarning,
+                    Modifier.padding(start = start, top = contentPadding.calculateTopPadding(), end = end, bottom = 12.dp),
+                )
+            }
             AnimatedContent(
                 targetState = displayedAlarms.isEmpty(),
                 transitionSpec = {
@@ -386,28 +404,27 @@ fun AlarmsScreen(
                     }
                 },
                 label = "alarmsEmptyTransition",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
             ) { isEmpty ->
                 if (isEmpty) {
                     EmptyAlarmState(
                         onAddAlarm = { onAddAlarm?.invoke() },
-                        contentPadding = contentPadding,
+                        modifier = Modifier.padding(panelPadding),
                     )
                 } else {
                     BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
-                    val usableWidth = maxWidth - contentPadding.calculateLeftPadding(direction) - contentPadding.calculateRightPadding(direction)
+                    val usableWidth = maxWidth - start - end
                     val columns = if (!listLayout && usableWidth >= 280.dp) 2 else 1
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = contentPadding,
+                        contentPadding = panelPadding,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         itemsIndexed(displayedAlarms, key = { _, alarm -> alarm.id }) { index, alarm ->
                             val isCardVisible = alarm.id !in exitingAlarmIds && (index < visibleCardsCount)
-                            AnimatedVisibility(
+                            androidx.compose.animation.AnimatedVisibility(
                                 modifier = Modifier.animateItem(
                                     placementSpec = spring(
                                         stiffness = 380f,
@@ -459,6 +476,7 @@ fun AlarmsScreen(
                 }
             }
         }
+    }
 
     if (showDeleteConfirmSheet) {
         val deletableIds = alarms.filter { it.id in selectedIds }.mapTo(mutableSetOf()) { it.id }
@@ -1365,13 +1383,11 @@ private const val DAY_WEIGHT_OFF = 400
 @Composable
 private fun EmptyAlarmState(
     onAddAlarm: () -> Unit,
-    contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(contentPadding)
             .padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

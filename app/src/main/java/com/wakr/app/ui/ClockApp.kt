@@ -467,6 +467,7 @@ fun ClockApp(startTab: String? = null, startRequestId: Long = 0L, vm: ClockViewM
                                     onSelectionCountChange = { alarmSelectionCount = it },
                                     clearSelectionSignal = clearSelectionSignal, deleteClickSignal = deleteClickSignal,
                                     editingAlarm = editing, widePane = single,
+                                    watchAlarmVolume = activeTab == Tab.ALARMS,
                                     contentPadding = insets, modifier = layout)
                             }
                         }
