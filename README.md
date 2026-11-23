@@ -1,8 +1,9 @@
 <p align="center">
   <img src="docs/wakr-logo.png" width="192" alt="Wakr’s lavender clock logo">
 </p>
-<h1 align="center">Wakr</h1>
+<h1 align="center">⏰ Wakr</h1>
 <p align="center"><strong>Wake up on your terms.</strong></p>
+<p align="center">Free and open source · Offline · ~5 MB download</p>
 
 Wakr is an offline alarm and clock app for Android with a modern Material 3 Expressive interface. Plan your mornings, make waking up interactive, and keep world time, timers, and a stopwatch close at hand.
 
@@ -26,9 +27,13 @@ Wakr is an offline alarm and clock app for Android with a modern Material 3 Expr
 
 ## 📲 Download
 
-Download **Wakr-1.0.0.apk** from the **Assets** section of the [Wakr 1.0.0 release](https://github.com/Masteratwork2049/Wakr/releases/tag/v1.0.0). Requires Android 8.0 or later.
+Download **Wakr-1.0.0.apk** (about 5 MB) from the **Assets** section of the [Wakr 1.0.0 release](https://github.com/Masteratwork2049/Wakr/releases/tag/v1.0.0). Requires Android 8.0 or later.
 
 Upgrading from a test-key preview? Export a backup first if the preview supports it. Android requires uninstalling that preview before installing the production-signed APK, and uninstalling clears its local data.
+
+## 🔐 Privacy
+
+Wakr works offline and requires no account. Android may ask for notification or alarm permissions so alerts work as expected.
 
 ## Building from source
 
