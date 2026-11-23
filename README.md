@@ -41,8 +41,6 @@ Wakr is built with Kotlin and Jetpack Compose. Its Android package is `com.wakr.
 
 You can also use the included Gradle wrapper to build the project from the command line.
 
-The [Phase 2 specification](docs/PHASE_2.md) describes scheduling, temporary alarms, and the shared design requirements.
-
 ## 🙌 Acknowledgements
 
 Wakr builds on Sam Beckman’s [Expressive Clock](https://github.com/samuelbeckman/expressive-clock), which builds on Rayane Bouafia’s [Material Clock](https://github.com/rbouaf/material-clock).
