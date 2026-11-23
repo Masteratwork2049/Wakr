@@ -1,7 +1,7 @@
 <p align="center">
   <img src="docs/wakr-logo.png" width="192" alt="Wakr’s black analog clock logo">
 </p>
-<h1 align="center">⏰ Wakr</h1>
+<h1 align="center">Wakr</h1>
 <p align="center"><strong>Wake up on your terms.</strong></p>
 <p align="center">Free and open source · Offline · ~5 MB download</p>
 
