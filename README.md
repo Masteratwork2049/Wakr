@@ -32,7 +32,7 @@ Wakr is an offline alarm and clock app for Android with a modern Material 3 Expr
 - 🌍 **Offline world clock** — Search for cities, reorder your favorites, and watch the hands glide to the selected time zone.
 - ⏳ **Four simultaneous timers** — Name each countdown and see how long it’s been overdue.
 - 🏁 **Stopwatch laps** — Record split times with the fastest and slowest laps highlighted.
-- 🕰️ **Clock widgets** — Customize analog and digital styles, including a translucent dial and sweeping seconds hand.
+- 🕰️ **Clock widgets** — Add a translucent analog clock widget with a sweeping seconds hand, or choose a customizable digital clock widget.
 - 💾 **Backup and restore** — Export your Wakr data to a local file and preview it before restoring.
 
 ## 📲 Download
