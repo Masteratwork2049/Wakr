@@ -7,6 +7,16 @@
 
 Wakr is an offline alarm and clock app for Android with a modern Material 3 Expressive interface. Plan your mornings, make waking up interactive, and keep world time, timers, and a stopwatch close at hand.
 
+## Screenshots
+
+| Alarms | World Clock | Timers | Stopwatch |
+| :---: | :---: | :---: | :---: |
+| <a href="docs/screenshots/alarms.png"><img src="docs/screenshots/alarms.png" width="180" alt="Wakr Alarms screenshot"></a> | <a href="docs/screenshots/world-clock.png"><img src="docs/screenshots/world-clock.png" width="180" alt="Wakr World Clock screenshot"></a> | <a href="docs/screenshots/timers.png"><img src="docs/screenshots/timers.png" width="180" alt="Wakr Timers screenshot"></a> | <a href="docs/screenshots/stopwatch.png"><img src="docs/screenshots/stopwatch.png" width="180" alt="Wakr Stopwatch screenshot"></a> |
+
+| Morning | Wake-up Summary | Wake-up Stats | Recent Alarms |
+| :---: | :---: | :---: | :---: |
+| <a href="docs/screenshots/morning.png"><img src="docs/screenshots/morning.png" width="180" alt="Wakr Morning screenshot"></a> | <a href="docs/screenshots/wake-up-summary.png"><img src="docs/screenshots/wake-up-summary.png" width="180" alt="Wakr Wake-up Summary screenshot"></a> | <a href="docs/screenshots/wake-up-stats.png"><img src="docs/screenshots/wake-up-stats.png" width="180" alt="Wakr Wake-up Stats screenshot"></a> | <a href="docs/screenshots/recent-alarms.png"><img src="docs/screenshots/recent-alarms.png" width="180" alt="Wakr Recent Alarms screenshot"></a> |
+
 ## ✨ Features
 
 - 🎨 **Modern design** — Material 3 Expressive, smooth transitions, and light, dark, and pure-black themes.
