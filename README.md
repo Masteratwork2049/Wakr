@@ -1,19 +1,34 @@
-# Wakr
+<p align="center">
+  <img src="docs/wakr-logo.png" width="192" alt="Wakr’s lavender clock logo">
+</p>
+<h1 align="center">Wakr</h1>
+<p align="center"><strong>Wake up on your terms.</strong></p>
 
-Wakr is a Material 3 Expressive alarm and clock app for Android. It builds on [Expressive Clock](https://github.com/samuelbeckman/expressive-clock) and adds a Morning tab with upcoming alarms and a seven-day schedule.
+Wakr is an offline alarm and clock app for Android with a modern Material 3 Expressive interface. Plan your mornings, make waking up interactive, and keep world time, timers, and a stopwatch close at hand.
 
-## Features
+## ✨ Features
 
-- **Alarms:** Tap an alarm to schedule a date, choose a time zone, pause a repeating alarm, or enable **Auto-delete after dismissal** for a one-time alarm. Temporary alarms stay on the grid through snoozes.
-- **Quick alarms:** Hold the **+** button on the Alarms tab for **Alarm in…**. Hold an alarm card to select it for duplication or deletion. Tap an alarm to find skipping and locking in its editor.
-- **Next alarm:** The Morning tab shows the next active alarm and offers **Pause all alarms** and **Resume alarms**.
-- **Wake-up missions:** In Edit Alarm, expand **Wake-up missions** to choose a difficulty, add or reorder challenges, or try one. The collapsed **Sound and vibration**, **Snooze**, and **Scheduling and protection** sections summarize those settings.
-- **Timers:** Create and manage countdown timers.
-- **Stopwatch:** Track elapsed time.
-- **Analog clock widget:** A configurable home-screen clock widget.
-- **Expressive design:** Material 3 Expressive styling, Google Sans Flex typography and carefully crafted animations.
+- 🎨 **Modern design** — Material 3 Expressive, smooth transitions, and light, dark, and pure-black themes.
+- 📅 **Flexible alarms** — Ring once, repeat on weekdays, pick specific dates, or schedule in another time zone.
+- ⚡ **Quick alarms** — Set an alarm for a few minutes from now or have a one-time alarm delete itself after dismissal.
+- 🔔 **Alarm heads-up** — New alarms default to a 30-minute reminder with a quick Skip action when available.
+- 🧠 **Wake-up missions** — Try, customize, and reorder Focus Tap, Memory, Math, Typing, and Puzzle challenges.
+- 🔒 **Pre-ring lock** — Require a mission to change or skip an alarm close to ring time.
+- 👀 **Still awake?** — Confirm you’re awake after dismissal with an optional Medium Focus Tap check.
+- 📳 **Shake to snooze** — When snooze is enabled, five distinct shakes snooze the alarm, and you can try it in Preview.
+- 🔊 **Sound and vibration** — Choose your sounds, rotation, fade-in, vibration pattern, and mute limits.
+- 🌅 **Morning dashboard** — See your next alarm, check this week’s schedule, and track your wake history.
+- 🌍 **Offline world clock** — Search for cities, reorder your favorites, and watch the hands glide to the selected time zone.
+- ⏳ **Four simultaneous timers** — Name each countdown and see how long it’s been overdue.
+- 🏁 **Stopwatch laps** — Record split times with the fastest and slowest laps highlighted.
+- 🕰️ **Clock widgets** — Customize analog and digital styles, including a translucent dial and sweeping seconds hand.
+- 💾 **Backup and restore** — Export your Wakr data to a local file and preview it before restoring.
 
-Features and behaviour may evolve as the project develops.
+## 📲 Download
+
+Download **Wakr-1.0.0.apk** from the **Assets** section of the [Wakr 1.0.0 release](https://github.com/Masteratwork2049/Wakr/releases/tag/v1.0.0). Requires Android 8.0 or later.
+
+Upgrading from a test-key preview? Export a backup first if the preview supports it. Android requires uninstalling that preview before installing the production-signed APK, and uninstalling clears its local data.
 
 ## Building from source
 
@@ -28,9 +43,11 @@ You can also use the included Gradle wrapper to build the project from the comma
 
 The [Phase 2 specification](docs/PHASE_2.md) describes scheduling, temporary alarms, and the shared design requirements.
 
-## Acknowledgements
+## 🙌 Acknowledgements
 
-Wakr preserves the licensing and attribution of [Expressive Clock](https://github.com/samuelbeckman/expressive-clock) and the open-source work of [Rayane Bouafia](https://github.com/rbouaf) and the original [Material Clock repository](https://github.com/rbouaf/material-clock).
+Wakr builds on Sam Beckman’s [Expressive Clock](https://github.com/samuelbeckman/expressive-clock), which builds on Rayane Bouafia’s [Material Clock](https://github.com/rbouaf/material-clock).
+
+[Clock by BlackyHawky](https://github.com/BlackyHawky/Clock) and [WakeNudge by riyadmondol2006](https://github.com/riyadmondol2006/WakeNudge) inspired some features. Wakr adds its own features, designs, and refinements.
 
 ## Licence
 
